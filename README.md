@@ -34,6 +34,13 @@ Optionally set a custom base URL:
 export ANYCRAWL_BASE_URL="https://api.anycrawl.dev"  # Default
 ```
 
+### Get your API key
+
+- Visit the AnyCrawl website and sign up or log in: [AnyCrawl](https://anycrawl.dev)
+- 🎉 Sign up for free to receive 1,500 credits — enough to crawl nearly 1,500 pages.
+- Open the dashboard → API Keys → Copy your key.
+- Copy the key and set it as the `ANYCRAWL_API_KEY` environment variable (see above).
+
 ## Usage
 
 ### Start the Server

@@ -111,7 +111,7 @@ export class AnyCrawlMCPServer {
                 tools: [
                     {
                         name: 'anycrawl_scrape',
-                        description: '🚀 Scrape a single URL and extract content in various formats. AnyCrawl turns websites into LLM-ready structured data with high performance multi-threading.',
+                        description: '🚀 Scrape a single URL and extract content in various formats. AnyCrawl turns websites into LLM-ready structured data with high performance multi-threading.\n\nBest for: Extracting content from a known, single page (article, docs page, product page).\nNot recommended for: Broad discovery across many pages (use anycrawl_crawl); open-ended questions across the web (use anycrawl_search).\nCommon mistakes: Using a headless engine unnecessarily (prefer cheerio for static pages); requesting heavy formats (screenshots/rawHtml) when not needed; setting large timeouts without cause.\n\nPrompt example: "Scrape this page and return clean markdown: https://example.com/blog/post"\nEngine guidance: Use cheerio for static HTML, playwright for dynamic apps, puppeteer for Chrome automation.\n\nUsage example without formats:\n{\n  "name": "anycrawl_scrape",\n  "arguments": {\n    "url": "https://news.ycombinator.com",\n    "engine": "cheerio"\n  }\n}\n\nUsage example with formats:\n{\n  "name": "anycrawl_scrape",\n  "arguments": {\n    "url": "https://example.com/docs/page",\n    "engine": "playwright",\n    "formats": ["markdown"],\n    "wait_for": 1500\n  }\n}\n\nReturns: { url, status, jobId, title, html?, markdown?, metadata?, timestamp }',
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -216,7 +216,7 @@ export class AnyCrawlMCPServer {
                     },
                     {
                         name: 'anycrawl_crawl',
-                        description: '🌐 Start an asynchronous crawl job to scrape multiple pages from a website. Perfect for comprehensive site analysis, content aggregation, and bulk data collection with native multi-threading.',
+                        description: '🌐 Start an asynchronous crawl job to scrape multiple pages from a website. Perfect for comprehensive site analysis, content aggregation, and bulk data collection with native multi-threading.\n\nBest for: Multi-page coverage of a site or section (docs, blogs, categories).\nNot recommended for: A single known page (use anycrawl_scrape); open-ended web-wide queries (use anycrawl_search).\nCommon mistakes: Setting limit too high; using strategy="all" unintentionally; requesting heavy formats (e.g., full-page screenshots) across many pages; deep max_depth without need.\n\nPrompt example: "Crawl the docs section and return markdown for up to 100 pages."\nStrategy guidance: \n- same-domain (default) is safest; \n- same-hostname for subdomain specificity; \n- same-origin for strict protocol+domain; \n- all for external links (use cautiously).\n\nUsage example (basic):\n{\n  "name": "anycrawl_crawl",\n  "arguments": {\n    "url": "https://docs.example.com/*",\n    "engine": "cheerio",\n    "limit": 100,\n    "max_depth": 5\n  }\n}\n\nUsage example (with formats and filters):\n{\n  "name": "anycrawl_crawl",\n  "arguments": {\n    "url": "https://example.com/blog/*",\n    "engine": "cheerio",\n    "formats": ["markdown"],\n    "exclude_paths": ["/tags/*", "*.pdf"],\n    "include_tags": ["article", "main"],\n    "limit": 50\n  }\n}\n\nReturns: Job creation info { job_id, status, message }. Use anycrawl_crawl_status and anycrawl_crawl_results to monitor and retrieve data.',
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -413,7 +413,7 @@ export class AnyCrawlMCPServer {
                     },
                     {
                         name: 'anycrawl_crawl_status',
-                        description: '📊 Check the status of an asynchronous crawl job. Monitor progress, view statistics, and track completion status.',
+                        description: '📊 Check the status of an asynchronous crawl job. Monitor progress, view statistics, and track completion status.\n\nBest for: Ongoing monitoring of a crawl created with anycrawl_crawl.\nNot recommended for: Fetching page content (use anycrawl_crawl_results).\n\nUsage example:\n{\n  "name": "anycrawl_crawl_status",\n  "arguments": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396" }\n}\n\nReturns: { job_id, status, start_time, expires_at, credits_used, total, completed, failed }',
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -428,7 +428,7 @@ export class AnyCrawlMCPServer {
                     },
                     {
                         name: 'anycrawl_crawl_results',
-                        description: '📄 Get results from a completed or in-progress crawl job. Supports pagination for large crawls with thousands of pages.',
+                        description: '📄 Get results from a completed or in-progress crawl job. Supports pagination for large crawls with thousands of pages.\n\nBest for: Retrieving crawled page data and metadata after or during a crawl.\nCommon mistakes: Forgetting to paginate via skip when next is present; requesting extremely large pages of data.\n\nUsage example:\n{\n  "name": "anycrawl_crawl_results",\n  "arguments": {\n    "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",\n    "skip": 0\n  }\n}\n\nReturns: { status, total, completed, creditsUsed, next?, data: Array<pageResult> } where next can be used as the next skip value for pagination.',
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -450,7 +450,7 @@ export class AnyCrawlMCPServer {
                     },
                     {
                         name: 'anycrawl_cancel_crawl',
-                        description: '🛑 Cancel a pending or running crawl job. Useful for stopping long-running crawls or correcting configuration mistakes.',
+                        description: '🛑 Cancel a pending or running crawl job. Useful for stopping long-running crawls or correcting configuration mistakes.\n\nBest for: Stopping crawls that are no longer needed or misconfigured.\nNot recommended for: Completed jobs (cancellation has no effect).\n\nUsage example:\n{\n  "name": "anycrawl_cancel_crawl",\n  "arguments": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396" }\n}\n\nReturns: Confirmation { job_id, status } indicating cancellation state.',
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -465,7 +465,7 @@ export class AnyCrawlMCPServer {
                     },
                     {
                         name: 'anycrawl_search',
-                        description: '🔍 Search the web using AnyCrawl\'s powerful search engine integration. Get SERP (Search Engine Results Page) data with optional content scraping for comprehensive research.',
+                        description: '🔍 Search the web using AnyCrawl\'s powerful search engine integration. Get SERP (Search Engine Results Page) data with optional content scraping for comprehensive research.\n\nBest for: Finding specific information across multiple websites when you don\'t know which site has it; retrieving the most relevant content for an open-ended query.\nNot recommended for: Searching the filesystem; when you already know the exact website to extract (use anycrawl_scrape); when you need comprehensive coverage of a single site (use anycrawl_crawl).\nCommon mistakes: Using crawl for open-ended questions; requesting heavy scrape_options (large formats/timeouts) unnecessarily.\n\nPrompt example: "Find the latest research papers on AI published in 2023."\nSources: web (default). Image/news verticals are not yet supported in this tool.\nScrape options: Only set scrape_options when absolutely necessary. Prefer small limits (≤5) and minimal formats (e.g., ["markdown"]) to avoid timeouts.\n\nUsage example without formats:\n{\n  "name": "anycrawl_search",\n  "arguments": {\n    "query": "top AI companies",\n    "limit": 5,\n    "scrape_options": { "engine": "cheerio" }\n  }\n}\n\nUsage example with formats:\n{\n  "name": "anycrawl_search",\n  "arguments": {\n    "query": "latest AI research papers 2023",\n    "limit": 5,\n    "lang": "en",\n    "country": "US",\n    "scrape_options": {\n      "engine": "cheerio",\n      "formats": ["markdown"],\n      "wait_for": 1000\n    }\n  }\n}\n\nReturns: Array of search results with optional scraped content for each result URL.',
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -486,7 +486,7 @@ export class AnyCrawlMCPServer {
                                     minimum: 1,
                                     maximum: 100,
                                     description: 'Maximum number of search results to return. Higher limits provide more comprehensive results.',
-                                    default: 10,
+                                    default: 5,
                                     examples: [5, 10, 20, 50],
                                 },
                                 offset: {
