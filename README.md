@@ -166,6 +166,123 @@ To use Server-Sent Events (SSE) locally instead of stdio transport:
 ANYCRAWL_MODE=SSE_LOCAL ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
 ```
 
+### Running with HTTP Streamable Server (stateful)
+
+Run the HTTP server that maintains MCP sessions via `Mcp-Session-Id` header.
+
+```bash
+ANYCRAWL_MODE=HTTP_STREAMABLE_SERVER ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+# or
+ANYCRAWL_API_KEY=YOUR-API-KEY npm run dev:http
+# or (built output)
+ANYCRAWL_API_KEY=YOUR-API-KEY npm run start:http
+```
+
+Optional server settings (defaults shown):
+
+```bash
+export ANYCRAWL_PORT=3000
+export ANYCRAWL_HOST=127.0.0.1
+```
+
+Health check:
+
+```bash
+curl -s http://127.0.0.1:${ANYCRAWL_PORT:-3000}/health
+```
+
+Initialize MCP session (expects `Mcp-Session-Id` in response headers):
+
+```bash
+curl -i -X POST http://127.0.0.1:${ANYCRAWL_PORT:-3000}/mcp \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -H 'Mcp-Protocol-Version: 2025-03-26' \
+  -d '{
+    "jsonrpc":"2.0","id":1,"method":"initialize",
+    "params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"curl","version":"0.0.0"},"capabilities":{}}
+  }'
+```
+
+Open SSE stream using the returned session id:
+
+```bash
+SESSION_ID="<value from Mcp-Session-Id>"
+curl -i -N http://127.0.0.1:${ANYCRAWL_PORT:-3000}/mcp \
+  -H 'Accept: text/event-stream' \
+  -H "Mcp-Session-Id: ${SESSION_ID}" \
+  -H 'Mcp-Protocol-Version: 2025-03-26'
+```
+
+### Running with CLOUD_SERVICE (stateless streamable HTTP)
+
+Run the stateless HTTP server (no persistent session; GET /mcp is not allowed).
+
+```bash
+ANYCRAWL_MODE=CLOUD_SERVICE ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+# or
+ANYCRAWL_API_KEY=YOUR-API-KEY npm run dev:cloud
+# or (built output)
+ANYCRAWL_API_KEY=YOUR-API-KEY npm run start:cloud
+```
+
+Health check:
+
+```bash
+curl -s http://127.0.0.1:${ANYCRAWL_PORT:-3000}/health
+```
+
+Initialize (returns JSON-RPC body; no `Mcp-Session-Id` header expected):
+
+```bash
+curl -i -X POST http://127.0.0.1:${ANYCRAWL_PORT:-3000}/mcp \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -H 'Mcp-Protocol-Version: 2025-03-26' \
+  -d '{
+    "jsonrpc":"2.0","id":1,"method":"initialize",
+    "params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"curl","version":"0.0.0"},"capabilities":{}}
+  }'
+```
+
+GET `/mcp` is not allowed in this mode (should return 405):
+
+```bash
+curl -i -X GET http://127.0.0.1:${ANYCRAWL_PORT:-3000}/mcp -H 'Accept: text/event-stream'
+```
+
+### Cursor configuration for HTTP modes (streamable_http)
+
+Configure Cursor to connect to your HTTP MCP server.
+
+Local HTTP Streamable Server:
+
+```json
+{
+  "mcpServers": {
+    "anycrawl-http-local": {
+      "type": "streamable_http",
+      "url": "http://127.0.0.1:3000/mcp"
+    }
+  }
+}
+```
+
+Cloud/Remote deployment:
+
+```json
+{
+  "mcpServers": {
+    "anycrawl-http-cloud": {
+      "type": "streamable_http",
+      "url": "https://your-domain.example.com/mcp"
+    }
+  }
+}
+```
+
+Note: For HTTP modes, set `ANYCRAWL_API_KEY` (and optional host/port) in the server process environment. Cursor does not need your API key when using `streamable_http`.
+
 ## Available Tools
 
 ### 1. Scrape Tool (`anycrawl_scrape`)

@@ -2,6 +2,8 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import {
     CallToolRequestSchema,
     ListToolsRequestSchema,
@@ -21,6 +23,10 @@ import {
     CrawlResultsToolSchema,
     CancelCrawlToolSchema,
 } from './types.js';
+import express, { Request, Response } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import { randomUUID } from 'node:crypto';
 
 export class AnyCrawlMCPServer {
     private server: Server;
@@ -1052,12 +1058,17 @@ Returns: Array of search results with optional scraped content for each result U
         await this.server.connect(transport);
         logger.info('AnyCrawl MCP Server running on stdio');
     }
+
+    public async connectTransport(transport: StdioServerTransport | StreamableHTTPServerTransport): Promise<void> {
+        await this.server.connect(transport);
+    }
 }
 
 // Main execution
 async function main() {
     const apiKey = process.env.ANYCRAWL_API_KEY;
     const baseUrl = process.env.ANYCRAWL_BASE_URL;
+    const mode = process.env.ANYCRAWL_MODE || 'STDIO';
 
     if (!apiKey) {
         logger.error('ANYCRAWL_API_KEY environment variable is required');
@@ -1065,8 +1076,138 @@ async function main() {
     }
 
     try {
-        const server = new AnyCrawlMCPServer(apiKey, baseUrl);
-        await server.run();
+        if (mode === 'HTTP_STREAMABLE_SERVER') {
+            const port = Number(process.env.ANYCRAWL_PORT || 3000);
+            const host = process.env.ANYCRAWL_HOST || '0.0.0.0';
+
+            const app = express();
+            app.use(helmet());
+            app.use(express.json({ limit: '1mb' }));
+            app.use(cors({
+                origin: '*',
+                exposedHeaders: ['Mcp-Session-Id'],
+                allowedHeaders: ['Content-Type', 'mcp-session-id'],
+            }));
+
+            app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok', mode }));
+
+            const transports: Record<string, StreamableHTTPServerTransport> = {};
+            const servers: Record<string, AnyCrawlMCPServer> = {};
+
+            app.post('/mcp', async (req: Request, res: Response) => {
+                const sessionId = req.headers['mcp-session-id'] as string | undefined;
+                let transport: StreamableHTTPServerTransport | undefined = sessionId ? transports[sessionId] : undefined;
+
+                if (sessionId && transport) {
+                    await transport.handleRequest(req, res, req.body);
+                    return;
+                }
+
+                if (!sessionId && isInitializeRequest(req.body)) {
+                    // Create transport and server for new session
+                    const newTransport = new StreamableHTTPServerTransport({
+                        sessionIdGenerator: () => randomUUID(),
+                        enableJsonResponse: true,
+                        onsessioninitialized: (sid) => {
+                            transports[sid] = newTransport;
+                        },
+                        // enableDnsRebindingProtection: true,
+                        // allowedHosts: ['127.0.0.1'],
+                    });
+                    const server = new AnyCrawlMCPServer(apiKey, baseUrl);
+                    newTransport.onclose = () => {
+                        if (newTransport.sessionId) {
+                            delete transports[newTransport.sessionId];
+                            delete servers[newTransport.sessionId];
+                        }
+                    };
+                    servers[newTransport.sessionId ?? 'pending'] = server;
+                    await server.connectTransport(newTransport);
+                    await newTransport.handleRequest(req, res, req.body);
+                    return;
+                }
+
+                res.status(400).json({
+                    jsonrpc: '2.0',
+                    error: { code: -32000, message: 'Bad Request: No valid session ID provided' },
+                    id: null,
+                });
+            });
+
+            const handleSessionRequest = async (req: Request, res: Response) => {
+                const sessionId = req.headers['mcp-session-id'] as string | undefined;
+                if (!sessionId || !transports[sessionId]) {
+                    res.status(400).send('Invalid or missing session ID');
+                    return;
+                }
+                const transport = transports[sessionId];
+                await transport.handleRequest(req, res);
+            };
+
+            app.get('/mcp', handleSessionRequest);
+            app.delete('/mcp', handleSessionRequest);
+
+            await new Promise<void>((resolve) => {
+                app.listen(port, host, () => {
+                    logger.info(`MCP Streamable HTTP Server listening on http://${host}:${port}`);
+                    resolve();
+                });
+            });
+            return;
+        }
+
+        if (mode === 'CLOUD_SERVICE') {
+            // Stateless Streamable HTTP server
+            const port = Number(process.env.ANYCRAWL_PORT || 3000);
+            const host = process.env.ANYCRAWL_HOST || '0.0.0.0';
+            const app = express();
+            app.use(helmet());
+            app.use(express.json({ limit: '1mb' }));
+            app.use(cors({
+                origin: '*',
+                exposedHeaders: ['Mcp-Session-Id'],
+                allowedHeaders: ['Content-Type', 'mcp-session-id'],
+            }));
+
+            app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok', mode }));
+
+            app.post('/mcp', async (req: Request, res: Response) => {
+                try {
+                    const server = new AnyCrawlMCPServer(apiKey, baseUrl);
+                    const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+                    res.on('close', () => {
+                        transport.close();
+                    });
+                    await server.connectTransport(transport);
+                    await transport.handleRequest(req, res, req.body);
+                } catch (err) {
+                    logger.error('Error handling MCP request:', err);
+                    if (!res.headersSent) {
+                        res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: null });
+                    }
+                }
+            });
+
+            app.get('/mcp', async (_req: Request, res: Response) => {
+                res.writeHead(405).end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null }));
+            });
+
+            app.delete('/mcp', async (_req: Request, res: Response) => {
+                res.writeHead(405).end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null }));
+            });
+
+            await new Promise<void>((resolve) => {
+                app.listen(port, host, () => {
+                    logger.info(`MCP Stateless Streamable HTTP Server listening on http://${host}:${port}`);
+                    resolve();
+                });
+            });
+            return;
+        }
+
+        // Default: stdio MCP server
+        const mcpServer = new AnyCrawlMCPServer(apiKey, baseUrl);
+        await mcpServer.run();
     } catch (error) {
         logger.error('Failed to start server:', error);
         process.exit(1);
