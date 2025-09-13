@@ -111,7 +111,84 @@ export class AnyCrawlMCPServer {
                 tools: [
                     {
                         name: 'anycrawl_scrape',
-                        description: '🚀 Scrape a single URL and extract content in various formats. AnyCrawl turns websites into LLM-ready structured data with high performance multi-threading.\n\nBest for: Extracting content from a known, single page (article, docs page, product page).\nNot recommended for: Broad discovery across many pages (use anycrawl_crawl); open-ended questions across the web (use anycrawl_search).\nCommon mistakes: Using a headless engine unnecessarily (prefer cheerio for static pages); requesting heavy formats (screenshots/rawHtml) when not needed; setting large timeouts without cause.\n\nPrompt example: "Scrape this page and return clean markdown: https://example.com/blog/post"\nEngine guidance: Use cheerio for static HTML, playwright for dynamic apps, puppeteer for Chrome automation.\n\nUsage example without formats:\n{\n  "name": "anycrawl_scrape",\n  "arguments": {\n    "url": "https://news.ycombinator.com",\n    "engine": "cheerio"\n  }\n}\n\nUsage example with formats:\n{\n  "name": "anycrawl_scrape",\n  "arguments": {\n    "url": "https://example.com/docs/page",\n    "engine": "playwright",\n    "formats": ["markdown"],\n    "wait_for": 1500\n  }\n}\n\nReturns: { url, status, jobId, title, html?, markdown?, metadata?, timestamp }',
+                        description: `🚀 Scrape a single URL and extract content in various formats. AnyCrawl turns websites into LLM-ready structured data with high performance multi-threading.
+
+Best for: Extracting content from a known, single page (article, docs page, product page).
+Not recommended for: Broad discovery across many pages (use anycrawl_crawl); open-ended questions across the web (use anycrawl_search).
+Common mistakes: Using a headless engine unnecessarily (prefer cheerio for static pages); requesting heavy formats (screenshots/rawHtml) when not needed; setting large timeouts without cause.
+
+Prompt example: "Scrape this page and return clean markdown: https://example.com/blog/post"
+Engine guidance: Use cheerio for static HTML, playwright for dynamic apps, puppeteer for Chrome automation.
+
+Usage example without formats:
+{
+  "name": "anycrawl_scrape",
+  "arguments": {
+    "url": "https://news.ycombinator.com",
+    "engine": "cheerio"
+  }
+}
+
+Usage example with formats:
+{
+  "name": "anycrawl_scrape",
+  "arguments": {
+    "url": "https://example.com/docs/page",
+    "engine": "playwright",
+    "formats": ["markdown"],
+    "wait_for": 1500
+  }
+}
+
+Curl examples (JSON extraction via json_options):
+
+1) Using user_prompt for ad-hoc extraction
+
+curl -X POST https://api.anycrawl.dev/v1/scrape \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
+  -d '{
+  "url": "https://example.com/",
+  "engine": "playwright",
+  "formats": [
+    "markdown",
+    "json"
+  ],
+  "json_options": {
+    "user_prompt": "Extract the page title and the main paragraph content as plain text."
+  }
+}'
+
+2) Using a JSON Schema with user_prompt for structured extraction
+
+curl -X POST https://api.anycrawl.dev/v1/scrape \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
+  -d '{
+  "url": "https://example.com/",
+  "engine": "playwright",
+  "formats": [
+    "markdown",
+    "json"
+  ],
+  "json_options": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "title of web"
+        }
+      },
+      "required": [
+        "title"
+      ]
+    },
+    "user_prompt": "Extract the page title and the main paragraph content as plain text."
+  }
+}'
+
+Returns: { url, status, jobId, title, html?, markdown?, metadata?, timestamp }`,
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -216,7 +293,84 @@ export class AnyCrawlMCPServer {
                     },
                     {
                         name: 'anycrawl_crawl',
-                        description: '🌐 Start an asynchronous crawl job to scrape multiple pages from a website. Perfect for comprehensive site analysis, content aggregation, and bulk data collection with native multi-threading.\n\nBest for: Multi-page coverage of a site or section (docs, blogs, categories).\nNot recommended for: A single known page (use anycrawl_scrape); open-ended web-wide queries (use anycrawl_search).\nCommon mistakes: Setting limit too high; using strategy="all" unintentionally; requesting heavy formats (e.g., full-page screenshots) across many pages; deep max_depth without need.\n\nPrompt example: "Crawl the docs section and return markdown for up to 100 pages."\nStrategy guidance: \n- same-domain (default) is safest; \n- same-hostname for subdomain specificity; \n- same-origin for strict protocol+domain; \n- all for external links (use cautiously).\n\nUsage example (basic):\n{\n  "name": "anycrawl_crawl",\n  "arguments": {\n    "url": "https://docs.example.com/*",\n    "engine": "cheerio",\n    "limit": 100,\n    "max_depth": 5\n  }\n}\n\nUsage example (with formats and filters):\n{\n  "name": "anycrawl_crawl",\n  "arguments": {\n    "url": "https://example.com/blog/*",\n    "engine": "cheerio",\n    "formats": ["markdown"],\n    "exclude_paths": ["/tags/*", "*.pdf"],\n    "include_tags": ["article", "main"],\n    "limit": 50\n  }\n}\n\nReturns: Job creation info { job_id, status, message }. Use anycrawl_crawl_status and anycrawl_crawl_results to monitor and retrieve data.',
+                        description: `🌐 Start an asynchronous crawl job to scrape multiple pages from a website. Perfect for comprehensive site analysis, content aggregation, and bulk data collection with native multi-threading.
+
+Best for: Multi-page coverage of a site or section (docs, blogs, categories).
+Not recommended for: A single known page (use anycrawl_scrape); open-ended web-wide queries (use anycrawl_search).
+Common mistakes: Setting limit too high; using strategy="all" unintentionally; requesting heavy formats (e.g., full-page screenshots) across many pages; deep max_depth without need.
+
+Prompt example: "Crawl the docs section and return markdown for up to 100 pages."
+Strategy guidance:
+- same-domain (default) is safest;
+- same-hostname for subdomain specificity;
+- same-origin for strict protocol+domain;
+- all for external links (use cautiously).
+
+Usage example (basic):
+{
+  "name": "anycrawl_crawl",
+  "arguments": {
+    "url": "https://docs.example.com/*",
+    "engine": "cheerio",
+    "limit": 100,
+    "max_depth": 5
+  }
+}
+
+Usage example (with formats and filters):
+{
+  "name": "anycrawl_crawl",
+  "arguments": {
+    "url": "https://example.com/blog/*",
+    "engine": "cheerio",
+    "formats": ["markdown"],
+    "exclude_paths": ["/tags/*", "*.pdf"],
+    "include_tags": ["article", "main"],
+    "limit": 50
+  }
+}
+
+Curl examples (JSON extraction across pages via json_options):
+
+1) Create a crawl with user_prompt
+
+curl -X POST https://api.anycrawl.dev/v1/crawl \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
+  -d '{
+  "url": "https://example.com/blog/*",
+  "engine": "cheerio",
+  "limit": 50,
+  "formats": ["markdown", "json"],
+  "json_options": {
+    "user_prompt": "Extract the article title and author for each page."
+  }
+}'
+
+2) Create a crawl with a JSON Schema
+
+curl -X POST https://api.anycrawl.dev/v1/crawl \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
+  -d '{
+  "url": "https://example.com/docs/*",
+  "engine": "cheerio",
+  "max_depth": 5,
+  "formats": ["markdown", "json"],
+  "json_options": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "slug": { "type": "string" }
+      },
+      "required": ["title"]
+    },
+    "user_prompt": "Extract the page title and compute a slug."
+  }
+}'
+
+Returns: Job creation info { job_id, status, message }. Use anycrawl_crawl_status and anycrawl_crawl_results to monitor and retrieve data.`,
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -465,7 +619,86 @@ export class AnyCrawlMCPServer {
                     },
                     {
                         name: 'anycrawl_search',
-                        description: '🔍 Search the web using AnyCrawl\'s powerful search engine integration. Get SERP (Search Engine Results Page) data with optional content scraping for comprehensive research.\n\nBest for: Finding specific information across multiple websites when you don\'t know which site has it; retrieving the most relevant content for an open-ended query.\nNot recommended for: Searching the filesystem; when you already know the exact website to extract (use anycrawl_scrape); when you need comprehensive coverage of a single site (use anycrawl_crawl).\nCommon mistakes: Using crawl for open-ended questions; requesting heavy scrape_options (large formats/timeouts) unnecessarily.\n\nPrompt example: "Find the latest research papers on AI published in 2023."\nSources: web (default). Image/news verticals are not yet supported in this tool.\nScrape options: Only set scrape_options when absolutely necessary. Prefer small limits (≤5) and minimal formats (e.g., ["markdown"]) to avoid timeouts.\n\nUsage example without formats:\n{\n  "name": "anycrawl_search",\n  "arguments": {\n    "query": "top AI companies",\n    "limit": 5,\n    "scrape_options": { "engine": "cheerio" }\n  }\n}\n\nUsage example with formats:\n{\n  "name": "anycrawl_search",\n  "arguments": {\n    "query": "latest AI research papers 2023",\n    "limit": 5,\n    "lang": "en",\n    "country": "US",\n    "scrape_options": {\n      "engine": "cheerio",\n      "formats": ["markdown"],\n      "wait_for": 1000\n    }\n  }\n}\n\nReturns: Array of search results with optional scraped content for each result URL.',
+                        description: `🔍 Search the web using AnyCrawl's powerful search engine integration. Get SERP (Search Engine Results Page) data with optional content scraping for comprehensive research.
+
+Best for: Finding specific information across multiple websites when you don't know which site has it; retrieving the most relevant content for an open-ended query.
+Not recommended for: Searching the filesystem; when you already know the exact website to extract (use anycrawl_scrape); when you need comprehensive coverage of a single site (use anycrawl_crawl).
+Common mistakes: Using crawl for open-ended questions; requesting heavy scrape_options (large formats/timeouts) unnecessarily.
+
+Prompt example: "Find the latest research papers on AI published in 2023."
+Sources: web (default). Image/news verticals are not yet supported in this tool.
+Scrape options: Only set scrape_options when absolutely necessary. Prefer small limits (≤5) and minimal formats (e.g., ["markdown"]) to avoid timeouts.
+
+Usage example without formats:
+{
+  "name": "anycrawl_search",
+  "arguments": {
+    "query": "top AI companies",
+    "limit": 5,
+    "scrape_options": { "engine": "cheerio" }
+  }
+}
+
+Usage example with formats:
+{
+  "name": "anycrawl_search",
+  "arguments": {
+    "query": "latest AI research papers 2023",
+    "limit": 5,
+    "lang": "en",
+    "country": "US",
+    "scrape_options": {
+      "engine": "cheerio",
+      "formats": ["markdown"],
+      "wait_for": 1000
+    }
+  }
+}
+
+Curl examples (with scrape_options and optional JSON extraction):
+
+1) Basic search with scraping each result page
+
+curl -X POST https://api.anycrawl.dev/v1/search \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
+  -d '{
+  "query": "python web scraping tutorial",
+  "limit": 5,
+  "scrape_options": {
+    "engine": "cheerio",
+    "formats": ["markdown"]
+  }
+}'
+
+2) Search with JSON Schema extraction from result pages
+
+curl -X POST https://api.anycrawl.dev/v1/search \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
+  -d '{
+  "query": "best restaurants in New York",
+  "limit": 5,
+  "lang": "en",
+  "country": "US",
+  "scrape_options": {
+    "engine": "cheerio",
+    "formats": ["markdown", "json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "rating": { "type": "number" }
+        },
+        "required": ["name"]
+      },
+      "user_prompt": "Extract the restaurant name and rating if available."
+    }
+  }
+}'
+
+Returns: Array of search results with optional scraped content for each result URL.`,
                         inputSchema: {
                             type: 'object',
                             properties: {
