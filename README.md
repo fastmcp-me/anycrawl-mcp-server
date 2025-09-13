@@ -1,6 +1,6 @@
 # AnyCrawl MCP Server
 
-🚀 **AnyCrawl MCP Server** - Adds powerful web scraping and crawling capabilities to Cursor, Claude, and any other LLM clients through the Model Context Protocol (MCP).
+🚀 **AnyCrawl MCP Server** — Powerful web scraping and crawling for Cursor, Claude, and other LLM clients via the Model Context Protocol (MCP).
 
 ## Features
 
@@ -15,9 +15,17 @@
 
 ## Installation
 
+### Running with npx
+
 ```bash
-npm ci
-npm run build
+ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+```
+
+### Manual installation
+
+```bash
+npm install -g anycrawl-mcp-server
+ANYCRAWL_API_KEY=YOUR-API-KEY anycrawl-mcp
 ```
 
 ## Configuration
@@ -43,16 +51,119 @@ export ANYCRAWL_BASE_URL="https://api.anycrawl.dev"  # Default
 
 ## Usage
 
-### Start the Server
+### Running on Cursor
 
-```bash
-npm start
+Configuring Cursor. Note: Requires Cursor v0.45.6+.
+
+For Cursor v0.48.6 and newer, add this to your MCP Servers settings:
+
+```json
+{
+  "mcpServers": {
+    "anycrawl-mcp": {
+      "command": "npx",
+      "args": ["-y", "anycrawl-mcp"],
+      "env": {
+        "ANYCRAWL_API_KEY": "YOUR-API-KEY"
+      }
+    }
+  }
+}
 ```
 
-### Development Mode
+For Cursor v0.45.6:
+
+1. Open Cursor Settings → Features → MCP Servers → "+ Add New MCP Server"
+2. Name: "anycrawl-mcp" (or your preferred name)
+3. Type: "command"
+4. Command:
 
 ```bash
-npm run dev
+env ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+```
+
+On Windows, if you encounter issues:
+
+```bash
+cmd /c "set ANYCRAWL_API_KEY=YOUR-API-KEY && npx -y anycrawl-mcp"
+```
+
+### Running on VS Code
+
+For manual installation, add this JSON to your User Settings (JSON) in VS Code (Command Palette → Preferences: Open User Settings (JSON)):
+
+```json
+{
+  "mcp": {
+    "inputs": [
+      {
+        "type": "promptString",
+        "id": "apiKey",
+        "description": "AnyCrawl API Key",
+        "password": true
+      }
+    ],
+    "servers": {
+      "anycrawl": {
+        "command": "npx",
+        "args": ["-y", "anycrawl-mcp"],
+        "env": {
+          "ANYCRAWL_API_KEY": "${input:apiKey}"
+        }
+      }
+    }
+  }
+}
+```
+
+Optionally, place the following in `.vscode/mcp.json` in your workspace to share config:
+
+```json
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "apiKey",
+      "description": "AnyCrawl API Key",
+      "password": true
+    }
+  ],
+  "servers": {
+    "anycrawl": {
+      "command": "npx",
+      "args": ["-y", "anycrawl-mcp"],
+      "env": {
+        "ANYCRAWL_API_KEY": "${input:apiKey}"
+      }
+    }
+  }
+}
+```
+
+### Running on Windsurf
+
+Add this to `./codeium/windsurf/model_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mcp-server-anycrawl": {
+      "command": "npx",
+      "args": ["-y", "anycrawl-mcp"],
+      "env": {
+        "ANYCRAWL_API_KEY": "YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+### Running with SSE Local Mode
+
+To use Server-Sent Events (SSE) locally instead of stdio transport:
+
+```bash
+ANYCRAWL_MODE=SSE_LOCAL ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
 ```
 
 ## Available Tools
