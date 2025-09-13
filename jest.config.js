@@ -8,6 +8,7 @@ export default {
         }],
     },
     moduleNameMapper: {
+        '^@anycrawl/js-sdk$': '<rootDir>/src/__tests__/mocks/anycrawl-js-sdk.ts',
         '^(\\.{1,2}/.*)\\.js$': '$1',
     },
     testMatch: ['**/__tests__/**/*.test.ts'],

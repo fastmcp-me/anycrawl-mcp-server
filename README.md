@@ -324,7 +324,7 @@ Scrape a single URL and extract content in various formats.
 
 ### 2. Crawl Tool (`anycrawl_crawl`)
 
-Start a crawl job to scrape multiple pages from a website.
+Start a crawl job to scrape multiple pages from a website. By default this waits for completion and returns aggregated results using the SDK's `client.crawl` (defaults: poll every 3 seconds, timeout after 60 seconds).
 
 **Best for:**
 
@@ -342,6 +342,8 @@ Start a crawl job to scrape multiple pages from a website.
 - `exclude_paths` (optional): URL patterns to exclude
 - `include_paths` (optional): URL patterns to include
 - `scrape_options` (optional): Options for individual page scraping
+- `poll_seconds` (optional): Poll interval seconds for waiting (default: 3)
+- `timeout_ms` (optional): Overall timeout milliseconds for waiting (default: 60000)
 
 **Example:**
 
@@ -353,10 +355,14 @@ Start a crawl job to scrape multiple pages from a website.
     "engine": "playwright",
     "max_depth": 2,
     "limit": 50,
-    "strategy": "same-domain"
+    "strategy": "same-domain",
+    "poll_seconds": 3,
+    "timeout_ms": 60000
   }
 }
 ```
+
+Returns: `{ "job_id": "...", "status": "completed", "total": N, "completed": N, "creditsUsed": N, "data": [...] }`.
 
 ### 3. Crawl Status Tool (`anycrawl_crawl_status`)
 

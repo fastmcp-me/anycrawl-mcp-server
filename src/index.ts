@@ -13,7 +13,7 @@ import {
     ErrorCode,
     McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import { AnyCrawlClient } from './anycrawl-client.js';
+import { AnyCrawlClient } from '@anycrawl/js-sdk';
 import { logger } from './logger.js';
 import {
     ScrapeToolSchema,
@@ -117,84 +117,25 @@ export class AnyCrawlMCPServer {
                 tools: [
                     {
                         name: 'anycrawl_scrape',
-                        description: `🚀 Scrape a single URL and extract content in various formats. AnyCrawl turns websites into LLM-ready structured data with high performance multi-threading.
+                        description: `Scrape a single URL and extract content in selected formats.
 
-Best for: Extracting content from a known, single page (article, docs page, product page).
-Not recommended for: Broad discovery across many pages (use anycrawl_crawl); open-ended questions across the web (use anycrawl_search).
-Common mistakes: Using a headless engine unnecessarily (prefer cheerio for static pages); requesting heavy formats (screenshots/rawHtml) when not needed; setting large timeouts without cause.
+Best for: One known page (articles, docs, product pages).
+Not recommended for: Multi-page coverage (use anycrawl_crawl) or open-ended discovery (use anycrawl_search).
 
-Prompt example: "Scrape this page and return clean markdown: https://example.com/blog/post"
-Engine guidance: Use cheerio for static HTML, playwright for dynamic apps, puppeteer for Chrome automation.
+Usage (parameters):
+- url: HTTP/HTTPS URL to scrape (string, required)
+- engine: 'cheerio' | 'playwright' | 'puppeteer' (required)
+- proxy: Proxy URL (string, optional)
+- formats: Output formats ['markdown'|'html'|'text'|'screenshot'|'screenshot@fullPage'|'rawHtml'|'json'] (optional)
+- timeout: Request timeout in ms (number, optional)
+- retry: Enable auto-retry on failure (boolean, optional)
+- wait_for: Wait in ms for dynamic pages (number, optional)
+- include_tags: HTML tags to include (string[], optional)
+- exclude_tags: HTML tags to exclude (string[], optional)
+- json_options: { schema?, user_prompt?, schema_name?, schema_description? } (optional)
+- extract_source: 'html' | 'markdown' (optional)
 
-Usage example without formats:
-{
-  "name": "anycrawl_scrape",
-  "arguments": {
-    "url": "https://news.ycombinator.com",
-    "engine": "cheerio"
-  }
-}
-
-Usage example with formats:
-{
-  "name": "anycrawl_scrape",
-  "arguments": {
-    "url": "https://example.com/docs/page",
-    "engine": "playwright",
-    "formats": ["markdown"],
-    "wait_for": 1500
-  }
-}
-
-Curl examples (JSON extraction via json_options):
-
-1) Using user_prompt for ad-hoc extraction
-
-curl -X POST https://api.anycrawl.dev/v1/scrape \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
-  -d '{
-  "url": "https://example.com/",
-  "engine": "playwright",
-  "formats": [
-    "markdown",
-    "json"
-  ],
-  "json_options": {
-    "user_prompt": "Extract the page title and the main paragraph content as plain text."
-  }
-}'
-
-2) Using a JSON Schema with user_prompt for structured extraction
-
-curl -X POST https://api.anycrawl.dev/v1/scrape \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
-  -d '{
-  "url": "https://example.com/",
-  "engine": "playwright",
-  "formats": [
-    "markdown",
-    "json"
-  ],
-  "json_options": {
-    "schema": {
-      "type": "object",
-      "properties": {
-        "title": {
-          "type": "string",
-          "description": "title of web"
-        }
-      },
-      "required": [
-        "title"
-      ]
-    },
-    "user_prompt": "Extract the page title and the main paragraph content as plain text."
-  }
-}'
-
-Returns: { url, status, jobId, title, html?, markdown?, metadata?, timestamp }`,
+Returns: { url, status, jobId?, title?, html?, markdown?, metadata?, timestamp? }`,
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -299,84 +240,33 @@ Returns: { url, status, jobId, title, html?, markdown?, metadata?, timestamp }`,
                     },
                     {
                         name: 'anycrawl_crawl',
-                        description: `🌐 Start an asynchronous crawl job to scrape multiple pages from a website. Perfect for comprehensive site analysis, content aggregation, and bulk data collection with native multi-threading.
+                        description: `Start a crawl and return aggregated results.
 
-Best for: Multi-page coverage of a site or section (docs, blogs, categories).
-Not recommended for: A single known page (use anycrawl_scrape); open-ended web-wide queries (use anycrawl_search).
-Common mistakes: Setting limit too high; using strategy="all" unintentionally; requesting heavy formats (e.g., full-page screenshots) across many pages; deep max_depth without need.
+Best for: Multi-page coverage (docs, blogs, categories).
+Not recommended for: Single page (use anycrawl_scrape) or broad discovery (use anycrawl_search).
 
-Prompt example: "Crawl the docs section and return markdown for up to 100 pages."
-Strategy guidance:
-- same-domain (default) is safest;
-- same-hostname for subdomain specificity;
-- same-origin for strict protocol+domain;
-- all for external links (use cautiously).
+Usage (parameters):
+- url: Start URL or pattern (string, required)
+- engine: 'cheerio' | 'playwright' | 'puppeteer' (required)
+- proxy: Proxy URL (string, optional)
+- formats: Output formats per page (string[], optional)
+- timeout: Page request timeout in ms (number, optional)
+- wait_for: Wait in ms for dynamic pages (number, optional)
+- retry: Auto-retry failed pages (boolean, optional)
+- include_tags: Tags to include (string[], optional)
+- exclude_tags: Tags to exclude (string[], optional)
+- json_options: { schema?, user_prompt?, schema_name?, schema_description? } (optional)
+- extract_source: 'html' | 'markdown' (optional)
+- scrape_options: Per-page overrides { proxy?, formats?, timeout?, wait_for?, include_tags?, exclude_tags?, json_options?, engine? } (optional)
+- exclude_paths: URL patterns to exclude (string[], optional)
+- include_paths: URL patterns to include (string[], optional)
+- max_depth: Maximum crawl depth (number, optional)
+- strategy: 'all' | 'same-domain' | 'same-hostname' | 'same-origin' (optional)
+- limit: Max pages to crawl (number, optional)
+- poll_seconds: Poll interval seconds for waiting (default: 3)
+- timeout_ms: Overall timeout milliseconds for waiting (default: 60000)
 
-Usage example (basic):
-{
-  "name": "anycrawl_crawl",
-  "arguments": {
-    "url": "https://docs.example.com/*",
-    "engine": "cheerio",
-    "limit": 100,
-    "max_depth": 5
-  }
-}
-
-Usage example (with formats and filters):
-{
-  "name": "anycrawl_crawl",
-  "arguments": {
-    "url": "https://example.com/blog/*",
-    "engine": "cheerio",
-    "formats": ["markdown"],
-    "exclude_paths": ["/tags/*", "*.pdf"],
-    "include_tags": ["article", "main"],
-    "limit": 50
-  }
-}
-
-Curl examples (JSON extraction across pages via json_options):
-
-1) Create a crawl with user_prompt
-
-curl -X POST https://api.anycrawl.dev/v1/crawl \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
-  -d '{
-  "url": "https://example.com/blog/*",
-  "engine": "cheerio",
-  "limit": 50,
-  "formats": ["markdown", "json"],
-  "json_options": {
-    "user_prompt": "Extract the article title and author for each page."
-  }
-}'
-
-2) Create a crawl with a JSON Schema
-
-curl -X POST https://api.anycrawl.dev/v1/crawl \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
-  -d '{
-  "url": "https://example.com/docs/*",
-  "engine": "cheerio",
-  "max_depth": 5,
-  "formats": ["markdown", "json"],
-  "json_options": {
-    "schema": {
-      "type": "object",
-      "properties": {
-        "title": { "type": "string" },
-        "slug": { "type": "string" }
-      },
-      "required": ["title"]
-    },
-    "user_prompt": "Extract the page title and compute a slug."
-  }
-}'
-
-Returns: Job creation info { job_id, status, message }. Use anycrawl_crawl_status and anycrawl_crawl_results to monitor and retrieve data.`,
+Returns: Aggregated crawl results: { job_id, status, total, completed, creditsUsed, data }`,
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -573,7 +463,7 @@ Returns: Job creation info { job_id, status, message }. Use anycrawl_crawl_statu
                     },
                     {
                         name: 'anycrawl_crawl_status',
-                        description: '📊 Check the status of an asynchronous crawl job. Monitor progress, view statistics, and track completion status.\n\nBest for: Ongoing monitoring of a crawl created with anycrawl_crawl.\nNot recommended for: Fetching page content (use anycrawl_crawl_results).\n\nUsage example:\n{\n  "name": "anycrawl_crawl_status",\n  "arguments": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396" }\n}\n\nReturns: { job_id, status, start_time, expires_at, credits_used, total, completed, failed }',
+                        description: 'Check the status of a crawl job.\n\nUsage (parameters):\n- job_id: Crawl job ID (string, required)\n\nReturns: { job_id, status, start_time, expires_at, credits_used, total, completed, failed }',
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -588,7 +478,7 @@ Returns: Job creation info { job_id, status, message }. Use anycrawl_crawl_statu
                     },
                     {
                         name: 'anycrawl_crawl_results',
-                        description: '📄 Get results from a completed or in-progress crawl job. Supports pagination for large crawls with thousands of pages.\n\nBest for: Retrieving crawled page data and metadata after or during a crawl.\nCommon mistakes: Forgetting to paginate via skip when next is present; requesting extremely large pages of data.\n\nUsage example:\n{\n  "name": "anycrawl_crawl_results",\n  "arguments": {\n    "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",\n    "skip": 0\n  }\n}\n\nReturns: { status, total, completed, creditsUsed, next?, data: Array<pageResult> } where next can be used as the next skip value for pagination.',
+                        description: 'Get results from a completed or in-progress crawl job.\n\nUsage (parameters):\n- job_id: Crawl job ID (string, required)\n- skip: Number of results to skip for pagination (number, optional)\n\nReturns: { status, total, completed, creditsUsed, next?, data: Array<pageResult> }',
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -610,7 +500,7 @@ Returns: Job creation info { job_id, status, message }. Use anycrawl_crawl_statu
                     },
                     {
                         name: 'anycrawl_cancel_crawl',
-                        description: '🛑 Cancel a pending or running crawl job. Useful for stopping long-running crawls or correcting configuration mistakes.\n\nBest for: Stopping crawls that are no longer needed or misconfigured.\nNot recommended for: Completed jobs (cancellation has no effect).\n\nUsage example:\n{\n  "name": "anycrawl_cancel_crawl",\n  "arguments": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396" }\n}\n\nReturns: Confirmation { job_id, status } indicating cancellation state.',
+                        description: 'Cancel a pending or running crawl job.\n\nUsage (parameters):\n- job_id: Crawl job ID (string, required)\n\nReturns: { job_id, status }',
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -625,86 +515,23 @@ Returns: Job creation info { job_id, status, message }. Use anycrawl_crawl_statu
                     },
                     {
                         name: 'anycrawl_search',
-                        description: `🔍 Search the web using AnyCrawl's powerful search engine integration. Get SERP (Search Engine Results Page) data with optional content scraping for comprehensive research.
+                        description: `Search the web and optionally scrape each result for content.
 
-Best for: Finding specific information across multiple websites when you don't know which site has it; retrieving the most relevant content for an open-ended query.
-Not recommended for: Searching the filesystem; when you already know the exact website to extract (use anycrawl_scrape); when you need comprehensive coverage of a single site (use anycrawl_crawl).
-Common mistakes: Using crawl for open-ended questions; requesting heavy scrape_options (large formats/timeouts) unnecessarily.
+Best for: Finding relevant pages across websites and extracting their content.
+Not recommended for: Filesystem search or single known page (use anycrawl_scrape).
 
-Prompt example: "Find the latest research papers on AI published in 2023."
-Sources: web (default). Image/news verticals are not yet supported in this tool.
-Scrape options: Only set scrape_options when absolutely necessary. Prefer small limits (≤5) and minimal formats (e.g., ["markdown"]) to avoid timeouts.
+Usage (parameters):
+- query: Search query string (string, required)
+- engine: 'google' (optional)
+- limit: Max number of results (number, optional)
+- offset: Results to skip (number, optional)
+- pages: Number of search result pages (number, optional)
+- lang: Language code (string, optional)
+- country: Country code (string, optional)
+- scrape_options: Required when scraping result URLs { engine, proxy?, formats?, timeout?, wait_for?, include_tags?, exclude_tags?, json_options? }
+- safeSearch: 0 | 1 | 2 (number, optional)
 
-Usage example without formats:
-{
-  "name": "anycrawl_search",
-  "arguments": {
-    "query": "top AI companies",
-    "limit": 5,
-    "scrape_options": { "engine": "cheerio" }
-  }
-}
-
-Usage example with formats:
-{
-  "name": "anycrawl_search",
-  "arguments": {
-    "query": "latest AI research papers 2023",
-    "limit": 5,
-    "lang": "en",
-    "country": "US",
-    "scrape_options": {
-      "engine": "cheerio",
-      "formats": ["markdown"],
-      "wait_for": 1000
-    }
-  }
-}
-
-Curl examples (with scrape_options and optional JSON extraction):
-
-1) Basic search with scraping each result page
-
-curl -X POST https://api.anycrawl.dev/v1/search \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
-  -d '{
-  "query": "python web scraping tutorial",
-  "limit": 5,
-  "scrape_options": {
-    "engine": "cheerio",
-    "formats": ["markdown"]
-  }
-}'
-
-2) Search with JSON Schema extraction from result pages
-
-curl -X POST https://api.anycrawl.dev/v1/search \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
-  -d '{
-  "query": "best restaurants in New York",
-  "limit": 5,
-  "lang": "en",
-  "country": "US",
-  "scrape_options": {
-    "engine": "cheerio",
-    "formats": ["markdown", "json"],
-    "json_options": {
-      "schema": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string" },
-          "rating": { "type": "number" }
-        },
-        "required": ["name"]
-      },
-      "user_prompt": "Extract the restaurant name and rating if available."
-    }
-  }
-}'
-
-Returns: Array of search results with optional scraped content for each result URL.`,
+Returns: Array of search results with optional scraped content per URL`,
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -942,14 +769,18 @@ Returns: Array of search results with optional scraped content for each result U
         if ('proxy' in args) crawlArgs.proxy = validatedArgs.proxy;
         if ('extract_source' in args) crawlArgs.extract_source = validatedArgs.extract_source;
         if ('scrape_options' in args) crawlArgs.scrape_options = (args as any).scrape_options;
-        const result = await this.client.createCrawl(crawlArgs);
+        // Use SDK's aggregated crawl which handles creation and polling internally
+        const pollSeconds: number = (args as any).poll_seconds
+            ?? (((args as any).poll_interval_ms ? Math.max(1, Math.round((args as any).poll_interval_ms / 1000)) : 3));
+        const timeoutMs: number = (args as any).timeout_ms ?? 60000;
 
-        logger.info(`Crawl job created with ID: ${result.job_id}`);
+        const aggregated = await (this.client as any).crawl(crawlArgs, pollSeconds, timeoutMs);
+
         const ret2 = {
             content: [
                 {
                     type: 'text',
-                    text: `Crawl job created successfully!\nJob ID: ${result.job_id}\nStatus: ${result.status}\nMessage: ${result.message}\n\nUse anycrawl_crawl_status to check progress.`,
+                    text: JSON.stringify(aggregated, null, 2),
                 } as TextContent,
             ],
         };

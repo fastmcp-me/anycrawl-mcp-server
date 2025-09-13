@@ -173,6 +173,10 @@ export const CrawlToolSchema = z.object({
   max_depth: z.number().min(1).max(50).default(10),
   strategy: z.enum(['all', 'same-domain', 'same-hostname', 'same-origin']).default('same-domain'),
   limit: z.number().min(1).max(50000).default(100),
+  // Optional waiting options to aggregate results via SDK client.crawl
+  poll_seconds: z.number().min(1).max(60).default(3).optional(),
+  poll_interval_ms: z.number().min(100).max(60000).default(3000).optional(),
+  timeout_ms: z.number().min(1000).max(600000).default(60000).optional(),
 });
 
 export const SearchToolSchema = z.object({

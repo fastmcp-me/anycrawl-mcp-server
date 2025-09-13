@@ -1,9 +1,9 @@
 import { AnyCrawlMCPServer } from '../index.js';
-import { AnyCrawlClient } from '../anycrawl-client.js';
+import { AnyCrawlClient } from '@anycrawl/js-sdk';
 import { logger } from '../logger.js';
 
 // Mock dependencies
-jest.mock('../anycrawl-client.js');
+jest.mock('@anycrawl/js-sdk');
 jest.mock('../logger.js');
 
 const MockedAnyCrawlClient = jest.mocked(AnyCrawlClient);
@@ -79,6 +79,12 @@ describe('AnyCrawlMCPServer', () => {
                 const mockResult = {
                     url: 'https://example.com',
                     status: 'completed' as const,
+                    jobId: 'test-job-id',
+                    title: 'Test Page',
+                    html: '<html>Test</html>',
+                    markdown: '# Test Page',
+                    metadata: [],
+                    timestamp: '2024-01-01T00:00:00Z',
                 };
 
                 mockClient.scrape.mockResolvedValueOnce(mockResult);
@@ -120,6 +126,12 @@ describe('AnyCrawlMCPServer', () => {
                 const mockResult = {
                     url: 'https://example.com',
                     status: 'completed' as const,
+                    jobId: 'test-job-id',
+                    title: 'Test Page',
+                    html: '<html>Test</html>',
+                    markdown: '# Test Page',
+                    metadata: [],
+                    timestamp: '2024-01-01T00:00:00Z',
                 };
 
                 mockClient.scrape.mockResolvedValueOnce(mockResult);
@@ -155,68 +167,55 @@ describe('AnyCrawlMCPServer', () => {
         });
 
         describe('anycrawl_crawl', () => {
-            it('should handle successful crawl creation', async () => {
-                const mockResult = {
-                    job_id: 'test-crawl-id',
-                    status: 'created' as const,
-                    message: 'Crawl job created',
+            it('should call SDK crawl and return aggregated result (defaults 3s/60s)', async () => {
+                const aggregated = {
+                    status: 'completed' as const,
+                    total: 1,
+                    completed: 1,
+                    creditsUsed: 1,
+                    data: [{ url: 'https://example.com', title: 'Test' }],
                 };
-
-                mockClient.createCrawl.mockResolvedValueOnce(mockResult);
+                (mockClient.crawl as any).mockResolvedValueOnce(aggregated);
 
                 const result = await (server as any).handleCrawl({
                     url: 'https://example.com',
                     engine: 'cheerio',
                 });
 
+                expect(mockClient.crawl).toHaveBeenCalledWith({ url: 'https://example.com', engine: 'cheerio' }, 3, 60000);
                 expect(result.content).toHaveLength(1);
                 expect(result.content[0].type).toBe('text');
-                expect(result.content[0].text).toContain('Crawl job created successfully!');
-                expect(result.content[0].text).toContain('Job ID: test-crawl-id');
-                expect(mockClient.createCrawl).toHaveBeenCalledWith({
-                    url: 'https://example.com',
-                    engine: 'cheerio',
-                });
+                expect(JSON.parse(result.content[0].text)).toEqual(aggregated);
             });
 
-            it('should forward extract_source and json_options for crawl', async () => {
-                const mockResult = {
-                    job_id: 'test-crawl-id',
-                    status: 'created' as const,
-                    message: 'Crawl job created',
-                };
-
-                mockClient.createCrawl.mockResolvedValueOnce(mockResult);
+            it('should forward extract_source and scrape_options and custom polling', async () => {
+                const aggregated = { status: 'completed', total: 0, completed: 0, creditsUsed: 0, data: [] } as any;
+                (mockClient.crawl as any).mockResolvedValueOnce(aggregated);
 
                 await (server as any).handleCrawl({
                     url: 'https://example.com',
                     engine: 'cheerio',
                     extract_source: 'markdown',
-                    scrape_options: {
-                        engine: 'cheerio',
-                        json_options: { schema: { type: 'object' }, user_prompt: 'Extract' },
-                    },
+                    scrape_options: { engine: 'cheerio', json_options: { schema: { type: 'object' }, user_prompt: 'Extract' } },
+                    poll_seconds: 5,
+                    timeout_ms: 90000,
                 });
 
-                expect(mockClient.createCrawl).toHaveBeenCalledWith({
-                    url: 'https://example.com',
-                    engine: 'cheerio',
-                    extract_source: 'markdown',
-                    scrape_options: {
+                expect(mockClient.crawl).toHaveBeenCalledWith(
+                    {
+                        url: 'https://example.com',
                         engine: 'cheerio',
-                        json_options: { schema: { type: 'object' }, user_prompt: 'Extract' },
+                        extract_source: 'markdown',
+                        scrape_options: { engine: 'cheerio', json_options: { schema: { type: 'object' }, user_prompt: 'Extract' } },
                     },
-                });
+                    5,
+                    90000,
+                );
             });
 
-            it('should handle crawl creation with all options', async () => {
-                const mockResult = {
-                    job_id: 'test-crawl-id',
-                    status: 'created' as const,
-                    message: 'Crawl job created',
-                };
-
-                mockClient.createCrawl.mockResolvedValueOnce(mockResult);
+            it('should pass through full crawl options', async () => {
+                const aggregated = { status: 'completed', total: 0, completed: 0, creditsUsed: 0, data: [] } as any;
+                (mockClient.crawl as any).mockResolvedValueOnce(aggregated);
 
                 const options = {
                     url: 'https://example.com',
@@ -237,20 +236,25 @@ describe('AnyCrawlMCPServer', () => {
                     limit: 50,
                 };
 
-                await (server as any).handleCrawl(options);
+                const result = await (server as any).handleCrawl(options);
 
-                expect(mockClient.createCrawl).toHaveBeenCalledWith({
-                    url: 'https://example.com',
-                    engine: 'playwright',
-                    proxy: 'http://proxy.example.com:8080',
-                    formats: ['markdown'],
-                    timeout: 60000,
-                    retry: true,
-                    max_depth: 5,
-                    strategy: 'same-domain',
-                    limit: 50,
-                    scrape_options: { engine: 'cheerio' },
-                });
+                expect(mockClient.crawl).toHaveBeenCalledWith(
+                    {
+                        url: 'https://example.com',
+                        engine: 'playwright',
+                        proxy: 'http://proxy.example.com:8080',
+                        formats: ['markdown'],
+                        timeout: 60000,
+                        retry: true,
+                        max_depth: 5,
+                        strategy: 'same-domain',
+                        limit: 50,
+                        scrape_options: { engine: 'cheerio' },
+                    },
+                    3,
+                    60000,
+                );
+                expect(JSON.parse(result.content[0].text)).toEqual(aggregated);
             });
         });
 
@@ -289,6 +293,7 @@ describe('AnyCrawlMCPServer', () => {
                     creditsUsed: 10,
                     next: 'next-page-url',
                     data: [{ url: 'https://example.com', title: 'Test' }],
+                    success: true as true,
                 };
 
                 mockClient.getCrawlResults.mockResolvedValueOnce(mockResult);
@@ -300,7 +305,14 @@ describe('AnyCrawlMCPServer', () => {
 
                 expect(result.content).toHaveLength(1);
                 expect(result.content[0].type).toBe('text');
-                expect(JSON.parse(result.content[0].text)).toEqual(mockResult);
+                expect(JSON.parse(result.content[0].text)).toEqual({
+                    status: 'completed',
+                    total: 100,
+                    completed: 100,
+                    creditsUsed: 10,
+                    next: 'next-page-url',
+                    data: [{ url: 'https://example.com', title: 'Test' }],
+                });
                 expect(mockClient.getCrawlResults).toHaveBeenCalledWith('test-crawl-id', 0);
             });
 
@@ -311,6 +323,7 @@ describe('AnyCrawlMCPServer', () => {
                     completed: 100,
                     creditsUsed: 10,
                     data: [],
+                    success: true as true,
                 };
 
                 mockClient.getCrawlResults.mockResolvedValueOnce(mockResult);
@@ -458,6 +471,12 @@ describe('AnyCrawlMCPServer', () => {
             const mockResult = {
                 url: 'https://example.com',
                 status: 'completed' as const,
+                jobId: 'test-job-id',
+                title: 'Test Page',
+                html: '<html>Test</html>',
+                markdown: '# Test Page',
+                metadata: [],
+                timestamp: '2024-01-01T00:00:00Z',
             };
 
             mockClient.scrape.mockResolvedValueOnce(mockResult);
