@@ -1,0 +1,69 @@
+{
+  "name": "anycrawl-mcp-server",
+  "version": "1.0.6",
+  "description": "AnyCrawl MCP Server - Adds powerful web scraping and crawling to Cursor, Claude and any other LLM clients",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "anycrawl-mcp": "dist/cli.js",
+    "anycrawl-mcp-server": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "start:cloud": "ANYCRAWL_MODE=CLOUD_SERVICE node dist/cli.js",
+    "start:sse": "ANYCRAWL_MODE=SSE_LOCAL node dist/cli.js",
+    "start:http": "ANYCRAWL_MODE=HTTP_STREAMABLE_SERVER node dist/cli.js",
+    "start:local": "ANYCRAWL_MODE=runLocalServer node dist/cli.js",
+    "dev:cloud": "ANYCRAWL_MODE=CLOUD_SERVICE tsx src/cli.ts",
+    "dev:sse": "ANYCRAWL_MODE=SSE_LOCAL tsx src/cli.ts",
+    "dev:http": "ANYCRAWL_MODE=HTTP_STREAMABLE_SERVER tsx src/cli.ts",
+    "dev:local": "ANYCRAWL_MODE=runLocalServer tsx src/cli.ts",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "packageManager": "npm@10.8.2",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "anycrawl",
+    "mcp",
+    "web-scraping",
+    "crawling",
+    "claude",
+    "cursor",
+    "llm-tools"
+  ],
+  "author": "AnyCrawl Team",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "axios": "^1.6.0",
+    "zod": "^3.22.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@typescript-eslint/eslint-plugin": "6.21.0",
+    "@typescript-eslint/parser": "6.21.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "prettier": "^3.0.0",
+    "ts-jest": "^29.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
