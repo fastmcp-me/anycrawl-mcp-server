@@ -32,7 +32,7 @@ export class AnyCrawlMCPServer {
         this.server = new Server(
             {
                 name: 'anycrawl-mcp-server',
-                version: '1.0.0',
+                version: '0.0.3',
             },
             {
                 capabilities: {
