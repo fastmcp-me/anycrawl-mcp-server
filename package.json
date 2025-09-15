@@ -42,7 +42,7 @@
   "author": "AnyCrawl Team",
   "license": "MIT",
   "dependencies": {
-    "@anycrawl/js-sdk": "0.0.1",
+    "@anycrawl/js-sdk": "0.0.3",
     "@modelcontextprotocol/sdk": "^1.17.5",
     "axios": "^1.6.0",
     "cors": "^2.8.5",

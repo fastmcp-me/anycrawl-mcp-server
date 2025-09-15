@@ -14,7 +14,7 @@ import {
     McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { AnyCrawlClient } from '@anycrawl/js-sdk';
-import { logger } from './logger.js';
+import { logger } from './logger';
 import {
     ScrapeToolSchema,
     CrawlToolSchema,
@@ -22,7 +22,8 @@ import {
     CrawlStatusToolSchema,
     CrawlResultsToolSchema,
     CancelCrawlToolSchema,
-} from './types.js';
+} from './types';
+import type { SearchScrapeOptions, ScrapeOptions } from './types.js';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -135,7 +136,12 @@ Usage (parameters):
 - json_options: { schema?, user_prompt?, schema_name?, schema_description? } (optional)
 - extract_source: 'html' | 'markdown' (optional)
 
-Returns: { url, status, jobId?, title?, html?, markdown?, metadata?, timestamp? }`,
+Returns: { url, status, jobId?, title?, html?, markdown?, metadata?, timestamp? }
+
+Examples:
+- Minimal: { "url": "https://example.com", "engine": "cheerio" }
+- With JSON extraction: { "url": "https://news.ycombinator.com", "engine": "playwright", "formats": ["markdown"], "json_options": { "user_prompt": "Extract titles", "schema_name": "Articles" } }
+- With JSON schema extraction: { "url": "https://example.com/article", "engine": "cheerio", "json_options": { "schema_name": "Article", "schema_description": "Extract article metadata and content", "schema": { "type": "object", "properties": { "title": { "type": "string" }, "author": { "type": "string" }, "date": { "type": "string" }, "content": { "type": "string" } }, "required": ["title", "content"] } } }`,
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -234,6 +240,13 @@ Returns: { url, status, jobId?, title?, html?, markdown?, metadata?, timestamp? 
                                         },
                                     },
                                 },
+                                extract_source: {
+                                    type: 'string',
+                                    enum: ['html', 'markdown'],
+                                    description: 'Choose which source to extract from. Default is markdown.',
+                                    default: 'markdown',
+                                    examples: ['markdown', 'html'],
+                                },
                             },
                             required: ['url', 'engine'],
                         },
@@ -264,9 +277,15 @@ Usage (parameters):
 - strategy: 'all' | 'same-domain' | 'same-hostname' | 'same-origin' (optional)
 - limit: Max pages to crawl (number, optional)
 - poll_seconds: Poll interval seconds for waiting (default: 3)
+- poll_interval_ms: Alternative to poll_seconds in milliseconds (default: 3000)
 - timeout_ms: Overall timeout milliseconds for waiting (default: 60000)
 
-Returns: Aggregated crawl results: { job_id, status, total, completed, creditsUsed, data }`,
+Returns: Aggregated crawl results: { job_id, status, total, completed, creditsUsed, data }
+
+Examples:
+- Minimal: { "url": "https://docs.example.com/*", "engine": "cheerio" }
+- Advanced: { "url": "https://blog.example.com/*", "engine": "playwright", "limit": 50, "strategy": "same-domain", "scrape_options": { "formats": ["markdown", "html"], "timeout": 60000 }, "poll_seconds": 2, "timeout_ms": 120000 }
+- With JSON schema extraction: { "url": "https://example.com/articles/*", "engine": "cheerio", "json_options": { "schema_name": "Article", "schema": { "type": "object", "properties": { "title": { "type": "string" }, "content": { "type": "string" } }, "required": ["title", "content"] } } }`,
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -457,6 +476,37 @@ Returns: Aggregated crawl results: { job_id, status, total, completed, creditsUs
                                     default: 100,
                                     examples: [50, 100, 500, 1000],
                                 },
+                                extract_source: {
+                                    type: 'string',
+                                    enum: ['html', 'markdown'],
+                                    description: 'Choose which source to extract from. Default is markdown.',
+                                    default: 'markdown',
+                                    examples: ['markdown', 'html'],
+                                },
+                                poll_seconds: {
+                                    type: 'number',
+                                    minimum: 1,
+                                    maximum: 60,
+                                    description: 'Polling interval in seconds when aggregating results.',
+                                    default: 3,
+                                    examples: [1, 3, 5, 10],
+                                },
+                                poll_interval_ms: {
+                                    type: 'number',
+                                    minimum: 100,
+                                    maximum: 60000,
+                                    description: 'Polling interval in milliseconds (alternative to poll_seconds).',
+                                    default: 3000,
+                                    examples: [500, 1000, 3000, 5000],
+                                },
+                                timeout_ms: {
+                                    type: 'number',
+                                    minimum: 1000,
+                                    maximum: 600000,
+                                    description: 'Overall aggregation timeout in milliseconds.',
+                                    default: 60000,
+                                    examples: [30000, 60000, 120000],
+                                },
                             },
                             required: ['url', 'engine'],
                         },
@@ -523,15 +573,24 @@ Not recommended for: Filesystem search or single known page (use anycrawl_scrape
 Usage (parameters):
 - query: Search query string (string, required)
 - engine: 'google' (optional)
-- limit: Max number of results (number, optional)
+- limit: Max number of results, recommended to be 5 (number, optional)
 - offset: Results to skip (number, optional)
 - pages: Number of search result pages (number, optional)
 - lang: Language code (string, optional)
 - country: Country code (string, optional)
-- scrape_options: Required when scraping result URLs { engine, proxy?, formats?, timeout?, wait_for?, include_tags?, exclude_tags?, json_options? }
+- scrape_engine: Scrape engine for result pages: 'cheerio' | 'playwright' | 'puppeteer' (optional)
+- Top-level scrape options (apply to scraping results): proxy?, formats?, timeout?, wait_for?, include_tags?, exclude_tags?, json_options?, extract_source?
+- scrape_options: Optional nested object mirroring the top-level scrape options { engine?, proxy?, formats?, timeout?, wait_for?, include_tags?, exclude_tags?, json_options?, extract_source? }
 - safeSearch: 0 | 1 | 2 (number, optional)
 
-Returns: Array of search results with optional scraped content per URL`,
+Returns: Array of search results with optional scraped content per URL
+
+Examples:
+- Minimal: { "query": "AnyCrawl docs", "engine": "google", "limit": 5 }
+- Minimal: { "query": "site:example.com example", "engine": "google", "limit": 5 }
+- With scraping: { "query": "best LLM benchmarks 2024", "scrape_engine": "cheerio", "formats": ["markdown"], "include_tags": ["article", "main"], "safeSearch": 1 }
+- With JSON schema extraction: { "query": "site:example.com docs", "scrape_engine": "cheerio", "json_options": { "schema_name": "Doc", "schema": { "type": "object", "properties": { "title": { "type": "string" }, "url": { "type": "string" } }, "required": ["title", "url"] } } }
+- Best JSON schema extraction for search results: { "query": "AnyCrawl docs", "scrape_engine": "cheerio", "json_options": { "user_prompt": "extract summary" } }`,
                         inputSchema: {
                             type: 'object',
                             properties: {
@@ -552,7 +611,7 @@ Returns: Array of search results with optional scraped content per URL`,
                                     minimum: 1,
                                     maximum: 100,
                                     description: 'Maximum number of search results to return. Higher limits provide more comprehensive results.',
-                                    default: 5,
+                                    default: 10,
                                     examples: [5, 10, 20, 50],
                                 },
                                 offset: {
@@ -579,74 +638,66 @@ Returns: Array of search results with optional scraped content per URL`,
                                     description: 'Country code for search results. Use ISO 3166-1 alpha-2 codes like \'US\', \'GB\', \'CA\'.',
                                     examples: ['US', 'GB', 'CA', 'AU', 'DE', 'FR'],
                                 },
-                                scrape_options: {
-                                    type: 'object',
-                                    description: 'Options for scraping each search result URL. Enables deep content extraction from search results.',
-                                    properties: {
-                                        engine: {
-                                            type: 'string',
-                                            enum: ['playwright', 'cheerio', 'puppeteer'],
-                                            description: 'Scraping engine for search result URLs. Cheerio for speed, Playwright for dynamic content.',
-                                            examples: ['cheerio', 'playwright', 'puppeteer'],
-                                        },
-                                        proxy: {
-                                            type: 'string',
-                                            format: 'uri',
-                                            description: 'Proxy URL for scraping search results.',
-                                            examples: ['http://proxy.example.com:8080', 'socks5://127.0.0.1:1080']
-                                        },
-                                        formats: {
-                                            type: 'array',
-                                            items: {
-                                                type: 'string',
-                                                enum: ['markdown', 'html', 'text', 'screenshot', 'screenshot@fullPage', 'rawHtml', 'json'],
-                                            },
-                                            description: 'Output formats for each search result page.',
-                                            examples: [['markdown'], ['markdown', 'html'], ['screenshot', 'markdown']]
-                                        },
-                                        timeout: {
-                                            type: 'number',
-                                            minimum: 1000,
-                                            maximum: 600000,
-                                            description: 'Timeout for scraping each search result.',
-                                            examples: [30000, 60000, 300000]
-                                        },
-                                        wait_for: {
-                                            type: 'number',
-                                            minimum: 1,
-                                            maximum: 60000,
-                                            description: 'Wait time for each search result page to load.',
-                                            examples: [1000, 3000, 5000]
-                                        },
-                                        include_tags: {
-                                            type: 'array',
-                                            items: { type: 'string' },
-                                            description: 'HTML tags to include when scraping search results.',
-                                            examples: [['article', 'main'], ['h1', 'h2', 'p']]
-                                        },
-                                        exclude_tags: {
-                                            type: 'array',
-                                            items: { type: 'string' },
-                                            description: 'HTML tags to exclude when scraping search results.',
-                                            examples: [['nav', 'footer'], ['script', 'style']]
-                                        },
-                                        json_options: {
-                                            type: 'object',
-                                            description: 'JSON extraction options for search result content.'
-                                        },
-                                    },
-                                    required: ['engine'],
+                                scrape_engine: {
+                                    type: 'string',
+                                    enum: ['playwright', 'cheerio', 'puppeteer'],
+                                    description: 'Scraping engine for search result URLs. Cheerio for speed, Playwright for dynamic content.',
+                                    examples: ['cheerio', 'playwright', 'puppeteer'],
                                 },
-                                safeSearch: {
+                                proxy: {
+                                    type: 'string',
+                                    format: 'uri',
+                                    description: 'Proxy URL for scraping search results.',
+                                    examples: ['http://proxy.example.com:8080', 'socks5://127.0.0.1:1080']
+                                },
+                                formats: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'string',
+                                        enum: ['markdown', 'html', 'text', 'screenshot', 'screenshot@fullPage', 'rawHtml', 'json'],
+                                    },
+                                    description: 'Output formats for each search result page.',
+                                    examples: [['markdown'], ['markdown', 'html'], ['screenshot', 'markdown']]
+                                },
+                                timeout: {
                                     type: 'number',
-                                    minimum: 0,
-                                    maximum: 2,
-                                    nullable: true,
-                                    description: 'Safe search level: 0=off (show all results), 1=moderate (filter some content), 2=strict (maximum filtering).',
-                                    examples: [0, 1, 2],
+                                    minimum: 1000,
+                                    maximum: 600000,
+                                    description: 'Timeout for scraping each search result.',
+                                    examples: [30000, 60000, 300000]
+                                },
+                                wait_for: {
+                                    type: 'number',
+                                    minimum: 1,
+                                    maximum: 60000,
+                                    description: 'Wait time for each search result page to load.',
+                                    examples: [1000, 3000, 5000]
+                                },
+                                include_tags: {
+                                    type: 'array',
+                                    items: { type: 'string' },
+                                    description: 'HTML tags to include when scraping search results.',
+                                    examples: [['article', 'main'], ['h1', 'h2', 'p']]
+                                },
+                                exclude_tags: {
+                                    type: 'array',
+                                    items: { type: 'string' },
+                                    description: 'HTML tags to exclude when scraping search results.',
+                                    examples: [['nav', 'footer'], ['script', 'style']]
+                                },
+                                json_options: {
+                                    type: 'object',
+                                    description: 'JSON extraction options for search result content.'
+                                },
+                                extract_source: {
+                                    type: 'string',
+                                    enum: ['html', 'markdown'],
+                                    description: 'Choose which source to extract from. Default is markdown.',
+                                    default: 'markdown',
+                                    examples: ['markdown', 'html'],
                                 },
                             },
-                            required: ['query', 'scrape_options'],
+                            required: ['query'],
                         },
                     },
                 ] as Tool[],
@@ -714,7 +765,13 @@ Returns: Array of search results with optional scraped content per URL`,
         if ('exclude_tags' in args) scrapeArgs.exclude_tags = validatedArgs.exclude_tags;
         if ('json_options' in args) scrapeArgs.json_options = validatedArgs.json_options;
         if ('extract_source' in args) scrapeArgs.extract_source = validatedArgs.extract_source;
+
         const result = await this.client.scrape(scrapeArgs);
+
+        if (!result || typeof (result as any).status !== 'string') {
+            logger.error('Unexpected scrape result payload:', result as any);
+            throw new McpError(ErrorCode.InternalError, 'Unexpected scrape result from AnyCrawl API');
+        }
 
         if (result.status === 'failed') {
             logger.warn(`Scraping failed for ${result.url}: ${result.error}`);
@@ -756,19 +813,30 @@ Returns: Array of search results with optional scraped content per URL`,
     private async handleCrawl(args: any): Promise<CallToolResult> {
         logger.info(`Starting crawl for URL: ${args.url}`);
         const validatedArgs = CrawlToolSchema.parse(args);
+
+        // Top-level crawl params (NOT part of ScrapeOptionsSchema)
         const crawlArgs: any = {
             url: validatedArgs.url,
-            engine: validatedArgs.engine,
         };
-        if ('formats' in args) crawlArgs.formats = validatedArgs.formats;
-        if ('timeout' in args) crawlArgs.timeout = validatedArgs.timeout;
         if ('retry' in args) crawlArgs.retry = validatedArgs.retry;
+        if ('exclude_paths' in args) crawlArgs.exclude_paths = validatedArgs.exclude_paths;
+        if ('include_paths' in args) crawlArgs.include_paths = validatedArgs.include_paths;
         if ('max_depth' in args) crawlArgs.max_depth = validatedArgs.max_depth;
         if ('strategy' in args) crawlArgs.strategy = validatedArgs.strategy;
         if ('limit' in args) crawlArgs.limit = validatedArgs.limit;
-        if ('proxy' in args) crawlArgs.proxy = validatedArgs.proxy;
-        if ('extract_source' in args) crawlArgs.extract_source = validatedArgs.extract_source;
-        if ('scrape_options' in args) crawlArgs.scrape_options = (args as any).scrape_options;
+        if ('engine' in args) crawlArgs.engine = validatedArgs.engine;
+
+        // ScrapeOptionsSchema fields must be nested under scrape_options
+        const scrapeOptions: any = {};
+        if ('proxy' in args) scrapeOptions.proxy = validatedArgs.proxy;
+        if ('formats' in args) scrapeOptions.formats = validatedArgs.formats;
+        if ('timeout' in args) scrapeOptions.timeout = validatedArgs.timeout;
+        if ('wait_for' in args) scrapeOptions.wait_for = validatedArgs.wait_for;
+        if ('include_tags' in args) scrapeOptions.include_tags = validatedArgs.include_tags;
+        if ('exclude_tags' in args) scrapeOptions.exclude_tags = validatedArgs.exclude_tags;
+        if ('json_options' in args) scrapeOptions.json_options = validatedArgs.json_options;
+        if ('extract_source' in args) scrapeOptions.extract_source = validatedArgs.extract_source;
+
         // Use SDK's aggregated crawl which handles creation and polling internally
         const pollSeconds: number = (args as any).poll_seconds
             ?? (((args as any).poll_interval_ms ? Math.max(1, Math.round((args as any).poll_interval_ms / 1000)) : 3));
@@ -776,7 +844,7 @@ Returns: Array of search results with optional scraped content per URL`,
 
         const aggregated = await (this.client as any).crawl(crawlArgs, pollSeconds, timeoutMs);
 
-        const ret2 = {
+        const ret = {
             content: [
                 {
                     type: 'text',
@@ -785,7 +853,7 @@ Returns: Array of search results with optional scraped content per URL`,
             ],
         };
         logger.debug('Tool anycrawl_crawl completed successfully');
-        return ret2;
+        return ret;
     }
 
     private async handleCrawlStatus(args: any): Promise<CallToolResult> {
@@ -858,18 +926,34 @@ Returns: Array of search results with optional scraped content per URL`,
 
     private async handleSearch(args: any): Promise<CallToolResult> {
         const validatedArgs = SearchToolSchema.parse(args);
+
+        // Top-level search params
         const searchArgs: any = {
             query: validatedArgs.query,
-            engine: validatedArgs.engine, // include defaults
-            limit: validatedArgs.limit,
-            offset: validatedArgs.offset,
         };
+        if ('engine' in args) searchArgs.engine = validatedArgs.engine; // search engine (e.g., google)
+        if ('limit' in args) searchArgs.limit = validatedArgs.limit;
+        if ('offset' in args) searchArgs.offset = validatedArgs.offset;
         if ('pages' in args) searchArgs.pages = validatedArgs.pages;
         if ('lang' in args) searchArgs.lang = validatedArgs.lang;
         if ('country' in args) searchArgs.country = validatedArgs.country;
-        // pass raw scrape_options to avoid injecting defaults
-        searchArgs.scrape_options = (args as any).scrape_options;
         if ('safeSearch' in args) searchArgs.safeSearch = validatedArgs.safeSearch;
+
+        // Build nested scrape_options from SearchScrapeOptions fields
+        const scrapeOptions: any = {};
+        if ('scrape_engine' in args) scrapeOptions.engine = (validatedArgs as any).scrape_engine;
+        if ('proxy' in args) scrapeOptions.proxy = validatedArgs.proxy as any;
+        if ('formats' in args) scrapeOptions.formats = validatedArgs.formats as any;
+        if ('timeout' in args) scrapeOptions.timeout = validatedArgs.timeout as any;
+        if ('wait_for' in args) scrapeOptions.wait_for = validatedArgs.wait_for as any;
+        if ('include_tags' in args) scrapeOptions.include_tags = validatedArgs.include_tags as any;
+        if ('exclude_tags' in args) scrapeOptions.exclude_tags = validatedArgs.exclude_tags as any;
+        if ('json_options' in args) scrapeOptions.json_options = validatedArgs.json_options as any;
+        if ('extract_source' in args) scrapeOptions.extract_source = (validatedArgs as any).extract_source;
+        if (Object.keys(scrapeOptions).length > 0) {
+            searchArgs.scrape_options = scrapeOptions;
+        }
+
         const results = await this.client.search(searchArgs);
 
         const ret6 = {
