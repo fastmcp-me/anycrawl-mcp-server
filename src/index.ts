@@ -3,6 +3,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import {
     CallToolRequestSchema,
@@ -14,7 +15,7 @@ import {
     McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { AnyCrawlClient } from '@anycrawl/js-sdk';
-import { logger } from './logger';
+import { logger } from './logger.js';
 import {
     ScrapeToolSchema,
     CrawlToolSchema,
@@ -22,7 +23,7 @@ import {
     CrawlStatusToolSchema,
     CrawlResultsToolSchema,
     CancelCrawlToolSchema,
-} from './types';
+} from './types.js';
 import type { SearchScrapeOptions, ScrapeOptions } from './types.js';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
@@ -58,42 +59,64 @@ export class AnyCrawlMCPServer {
     public async handleToolCall(request: { name: string; arguments: any }): Promise<any> {
         const { name, arguments: args } = request as any;
         try {
-            logger.debug(`Tool called: ${name}`, args);
+            logger.info(`Tool called: ${name}`, {
+                tool: name,
+                parameters: args,
+                timestamp: new Date().toISOString()
+            });
             switch (name) {
                 case 'anycrawl_scrape':
                     {
                         const r = await this.handleScrape(args);
-                        logger.debug(`Tool ${name} completed successfully`);
+                        logger.info(`Tool ${name} completed successfully`, {
+                            tool: name,
+                            timestamp: new Date().toISOString()
+                        });
                         return r;
                     }
                 case 'anycrawl_crawl':
                     {
                         const r = await this.handleCrawl(args);
-                        logger.debug(`Tool ${name} completed successfully`);
+                        logger.info(`Tool ${name} completed successfully`, {
+                            tool: name,
+                            timestamp: new Date().toISOString()
+                        });
                         return r;
                     }
                 case 'anycrawl_crawl_status':
                     {
                         const r = await this.handleCrawlStatus(args);
-                        logger.debug(`Tool ${name} completed successfully`);
+                        logger.info(`Tool ${name} completed successfully`, {
+                            tool: name,
+                            timestamp: new Date().toISOString()
+                        });
                         return r;
                     }
                 case 'anycrawl_crawl_results':
                     {
                         const r = await this.handleCrawlResults(args);
-                        logger.debug(`Tool ${name} completed successfully`);
+                        logger.info(`Tool ${name} completed successfully`, {
+                            tool: name,
+                            timestamp: new Date().toISOString()
+                        });
                         return r;
                     }
                 case 'anycrawl_cancel_crawl':
                     {
                         const r = await this.handleCancelCrawl(args);
-                        logger.debug(`Tool ${name} completed successfully`);
+                        logger.info(`Tool ${name} completed successfully`, {
+                            tool: name,
+                            timestamp: new Date().toISOString()
+                        });
                         return r;
                     }
                 case 'anycrawl_search':
                     {
                         const r = await this.handleSearch(args);
-                        logger.debug(`Tool ${name} completed successfully`);
+                        logger.info(`Tool ${name} completed successfully`, {
+                            tool: name,
+                            timestamp: new Date().toISOString()
+                        });
                         return r;
                     }
                 default:
@@ -104,7 +127,12 @@ export class AnyCrawlMCPServer {
             }
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error occurred';
-            logger.error(`Tool ${name} failed:`, message);
+            logger.error(`Tool ${name} failed:`, {
+                tool: name,
+                error: message,
+                parameters: args,
+                timestamp: new Date().toISOString()
+            });
             return {
                 content: [{ type: 'text', text: `Tool execution failed: ${message}` as string }],
                 isError: true,
@@ -610,8 +638,8 @@ Examples:
                                     type: 'number',
                                     minimum: 1,
                                     maximum: 100,
-                                    description: 'Maximum number of search results to return. Higher limits provide more comprehensive results.',
-                                    default: 10,
+                                    description: 'Maximum number of search results to return. Higher limits provide more comprehensive results. Recommended to be 5.',
+                                    default: 5,
                                     examples: [5, 10, 20, 50],
                                 },
                                 offset: {
@@ -706,7 +734,11 @@ Examples:
 
         this.server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             const { name, arguments: args } = request.params;
-            logger.debug(`Tool called: ${name}`, args);
+            logger.info(`Tool called: ${name}`, {
+                tool: name,
+                parameters: args,
+                timestamp: new Date().toISOString()
+            });
 
             try {
                 let result: CallToolResult;
@@ -734,11 +766,19 @@ Examples:
                         throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
                 }
 
-                logger.debug(`Tool ${name} completed successfully`);
+                logger.info(`Tool ${name} completed successfully`, {
+                    tool: name,
+                    timestamp: new Date().toISOString()
+                });
                 return result;
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                logger.error(`Tool ${name} failed:`, errorMessage);
+                logger.error(`Tool ${name} failed:`, {
+                    tool: name,
+                    error: errorMessage,
+                    parameters: args,
+                    timestamp: new Date().toISOString()
+                });
 
                 if (error instanceof McpError) {
                     throw error;
@@ -974,7 +1014,7 @@ Examples:
         logger.info('AnyCrawl MCP Server running on stdio');
     }
 
-    public async connectTransport(transport: StdioServerTransport | StreamableHTTPServerTransport): Promise<void> {
+    public async connectTransport(transport: StdioServerTransport | StreamableHTTPServerTransport | SSEServerTransport): Promise<void> {
         await this.server.connect(transport);
     }
 }
@@ -997,7 +1037,7 @@ async function main() {
 
             const app = express();
             app.use(helmet());
-            app.use(express.json({ limit: '1mb' }));
+            app.use(express.json({ limit: '5mb' }));
             app.use(cors({
                 origin: '*',
                 exposedHeaders: ['Mcp-Session-Id'],
@@ -1071,13 +1111,14 @@ async function main() {
             return;
         }
 
-        if (mode === 'CLOUD_SERVICE') {
-            // Stateless Streamable HTTP server
+        if (mode === 'SSE_SERVER') {
+            // SSE server for legacy clients
             const port = Number(process.env.ANYCRAWL_PORT || 3000);
             const host = process.env.ANYCRAWL_HOST || '0.0.0.0';
+
             const app = express();
             app.use(helmet());
-            app.use(express.json({ limit: '1mb' }));
+            app.use(express.json({ limit: '5mb' }));
             app.use(cors({
                 origin: '*',
                 exposedHeaders: ['Mcp-Session-Id'],
@@ -1086,34 +1127,37 @@ async function main() {
 
             app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok', mode }));
 
-            app.post('/mcp', async (req: Request, res: Response) => {
-                try {
-                    const server = new AnyCrawlMCPServer(apiKey, baseUrl);
-                    const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-                    res.on('close', () => {
-                        transport.close();
-                    });
-                    await server.connectTransport(transport);
-                    await transport.handleRequest(req, res, req.body);
-                } catch (err) {
-                    logger.error('Error handling MCP request:', err);
-                    if (!res.headersSent) {
-                        res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: null });
-                    }
+            // Create a shared server instance for SSE
+            const server = new AnyCrawlMCPServer(apiKey, baseUrl);
+            const transports: Record<string, SSEServerTransport> = {};
+
+            // Legacy SSE endpoint for older clients
+            app.get('/sse', async (req: Request, res: Response) => {
+                // Create SSE transport for legacy clients
+                const transport = new SSEServerTransport('/messages', res);
+                transports[transport.sessionId] = transport;
+
+                res.on("close", () => {
+                    delete transports[transport.sessionId];
+                });
+
+                await server.connectTransport(transport);
+            });
+
+            // Legacy message endpoint for older clients
+            app.post('/messages', async (req: Request, res: Response) => {
+                const sessionId = req.query.sessionId as string;
+                const transport = transports[sessionId];
+                if (transport) {
+                    await transport.handlePostMessage(req, res, req.body);
+                } else {
+                    res.status(400).send('No transport found for sessionId');
                 }
-            });
-
-            app.get('/mcp', async (_req: Request, res: Response) => {
-                res.writeHead(405).end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null }));
-            });
-
-            app.delete('/mcp', async (_req: Request, res: Response) => {
-                res.writeHead(405).end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null }));
             });
 
             await new Promise<void>((resolve) => {
                 app.listen(port, host, () => {
-                    logger.info(`MCP Stateless Streamable HTTP Server listening on http://${host}:${port}`);
+                    logger.info(`MCP SSE Server listening on http://${host}:${port}`);
                     resolve();
                 });
             });

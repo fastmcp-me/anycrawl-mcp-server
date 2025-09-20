@@ -11,7 +11,7 @@
 - **Flexible Output**: Markdown, HTML, text, screenshots, and structured JSON
 - **Async Operations**: Non-blocking crawl jobs with status monitoring
 - **Error Handling**: Robust error handling and logging
-- **Multiple Modes**: Support for different deployment scenarios (CLOUD_SERVICE, SSE_LOCAL, HTTP_STREAMABLE_SERVER, runLocalServer)
+- **Multiple Modes**: Support for different deployment scenarios (STDIO, SSE_SERVER, HTTP_STREAMABLE_SERVER, runLocalServer)
 
 ## Installation
 
@@ -50,6 +50,33 @@ export ANYCRAWL_BASE_URL="https://api.anycrawl.dev"  # Default
 - Copy the key and set it as the `ANYCRAWL_API_KEY` environment variable (see above).
 
 ## Usage
+
+### Available Modes
+
+AnyCrawl MCP Server supports multiple deployment modes to fit different use cases:
+
+| Mode                     | Description                     | Best For                                       | Transport                 |
+| ------------------------ | ------------------------------- | ---------------------------------------------- | ------------------------- |
+| `STDIO`                  | Standard input/output (default) | Cursor, Claude Desktop, CLI tools              | stdio                     |
+| `SSE_SERVER`             | Server-Sent Events web server   | Web applications, testing, browser integration | HTTP + SSE                |
+| `HTTP_STREAMABLE_SERVER` | Stateful HTTP server            | Microservices, API integration                 | HTTP with session headers |
+
+#### Quick Start Commands
+
+```bash
+# Development mode (with hot reload)
+npm run dev              # STDIO mode
+npm run dev:sse          # SSE Server mode
+npm run dev:http         # HTTP Streamable Server mode
+
+# Production mode
+npm start                # STDIO mode
+npm run start:sse        # SSE Server mode
+npm run start:http       # HTTP Streamable Server mode
+
+# With environment variables
+ANYCRAWL_MODE=SSE_SERVER ANYCRAWL_API_KEY=YOUR-KEY npm run dev
+```
 
 ### Running on Cursor
 
@@ -158,13 +185,100 @@ Add this to `./codeium/windsurf/model_config.json`:
 }
 ```
 
-### Running with SSE Local Mode
+### Running with SSE Server Mode
 
-To use Server-Sent Events (SSE) locally instead of stdio transport:
+The SSE (Server-Sent Events) mode provides a web-based interface for MCP communication, ideal for web applications, testing, and integration with web-based LLM clients.
+
+#### Quick Start
 
 ```bash
-ANYCRAWL_MODE=SSE_LOCAL ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+# Development mode
+ANYCRAWL_MODE=SSE_SERVER ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+
+# Or using npm scripts
+ANYCRAWL_API_KEY=YOUR-API-KEY npm run dev:sse
 ```
+
+#### Server Configuration
+
+Optional server settings (defaults shown):
+
+```bash
+export ANYCRAWL_PORT=3000
+export ANYCRAWL_HOST=0.0.0.0
+```
+
+#### Available Endpoints
+
+- **GET `/health`** - Health check endpoint
+- **GET `/sse`** - SSE connection endpoint for MCP clients
+- **POST `/messages`** - Message handling endpoint for SSE clients
+
+#### Health Check
+
+```bash
+curl -s http://localhost:${ANYCRAWL_PORT:-3000}/health
+# Response: {"status":"ok","mode":"SSE_SERVER"}
+```
+
+#### MCP Client Configuration
+
+The SSE server provides a web-based MCP interface that can be used with various MCP clients.
+
+**Available Endpoints:**
+
+- `GET /sse` - SSE connection endpoint for MCP clients
+- `POST /messages` - Message handling endpoint for SSE clients
+- `GET /health` - Health check endpoint
+
+#### Cursor Configuration for SSE Mode
+
+For Cursor v0.48.6 and newer, you can configure Cursor to connect to the SSE server:
+
+```json
+{
+  "mcpServers": {
+    "anycrawl-sse": {
+      "type": "sse",
+      "url": "http://localhost:3000/sse"
+    }
+  }
+}
+```
+
+**Note:** The API key is set when starting the server, not in the Cursor configuration.
+
+#### Generic MCP Client Configuration
+
+For other MCP clients that support SSE transport, use this configuration:
+
+```json
+{
+  "mcpServers": {
+    "anycrawl": {
+      "type": "sse",
+      "url": "http://localhost:3000/sse",
+      "name": "AnyCrawl MCP Server",
+      "description": "Web scraping and crawling tools"
+    }
+  }
+}
+```
+
+**Environment Setup:**
+
+```bash
+# Start SSE server with API key
+ANYCRAWL_API_KEY=your-api-key-here npm run dev:sse
+```
+
+#### Key Features
+
+- **Web-based MCP interface** for easy integration
+- **Real-time communication** with Server-Sent Events
+- **CORS-enabled** for cross-origin requests
+- **Health monitoring** with built-in endpoints
+- **Session management** with automatic ID handling
 
 ### Running with HTTP Streamable Server (stateful)
 
@@ -212,43 +326,6 @@ curl -i -N http://127.0.0.1:${ANYCRAWL_PORT:-3000}/mcp \
   -H 'Accept: text/event-stream' \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
   -H 'Mcp-Protocol-Version: 2025-03-26'
-```
-
-### Running with CLOUD_SERVICE (stateless streamable HTTP)
-
-Run the stateless HTTP server (no persistent session; GET /mcp is not allowed).
-
-```bash
-ANYCRAWL_MODE=CLOUD_SERVICE ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
-# or
-ANYCRAWL_API_KEY=YOUR-API-KEY npm run dev:cloud
-# or (built output)
-ANYCRAWL_API_KEY=YOUR-API-KEY npm run start:cloud
-```
-
-Health check:
-
-```bash
-curl -s http://127.0.0.1:${ANYCRAWL_PORT:-3000}/health
-```
-
-Initialize (returns JSON-RPC body; no `Mcp-Session-Id` header expected):
-
-```bash
-curl -i -X POST http://127.0.0.1:${ANYCRAWL_PORT:-3000}/mcp \
-  -H 'Accept: application/json, text/event-stream' \
-  -H 'Content-Type: application/json' \
-  -H 'Mcp-Protocol-Version: 2025-03-26' \
-  -d '{
-    "jsonrpc":"2.0","id":1,"method":"initialize",
-    "params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"curl","version":"0.0.0"},"capabilities":{}}
-  }'
-```
-
-GET `/mcp` is not allowed in this mode (should return 405):
-
-```bash
-curl -i -X GET http://127.0.0.1:${ANYCRAWL_PORT:-3000}/mcp -H 'Accept: text/event-stream'
 ```
 
 ### Cursor configuration for HTTP modes (streamable_http)
