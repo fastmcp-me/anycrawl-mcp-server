@@ -27,7 +27,7 @@ export class CombinedMCPServer {
     constructor(config: CombinedServerConfig = {}) {
         this.config = {
             port: config.port || 3000,
-            host: config.host || 'localhost',
+            host: config.host || '0.0.0.0',
             baseUrl: config.baseUrl || 'https://api.anycrawl.dev',
         };
 
