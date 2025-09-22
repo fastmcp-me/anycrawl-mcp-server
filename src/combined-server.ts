@@ -23,6 +23,9 @@ export class CombinedMCPServer {
     private sseTransports: Record<string, Record<string, SSEServerTransport>> = {};
     private sseServers: Record<string, AnyCrawlMCPServer> = {};
     private config: Required<CombinedServerConfig>;
+    private deletionTimes: Map<string, number> = new Map(); // Store deletion timestamps
+    private cleanupTimer: NodeJS.Timeout | null = null;
+    private sessionStates: Map<string, 'active' | 'paused' | 'expired'> = new Map(); // Track session states
 
     constructor(config: CombinedServerConfig = {}) {
         this.config = {
@@ -34,6 +37,7 @@ export class CombinedMCPServer {
         this.app = express();
         this.setupMiddleware();
         this.setupRoutes();
+        this.startCleanupTimer();
     }
 
     private setupMiddleware(): void {
@@ -44,6 +48,82 @@ export class CombinedMCPServer {
             exposedHeaders: ['Mcp-Session-Id'],
             allowedHeaders: ['Content-Type', 'mcp-session-id'],
         }));
+    }
+
+    private startCleanupTimer(): void {
+        // Check for expired sessions every 30 seconds
+        this.cleanupTimer = setInterval(() => {
+            this.performCleanup();
+        }, 30000);
+    }
+
+    private performCleanup(): void {
+        const now = Date.now();
+        const keysToDelete: string[] = [];
+
+        // Check all sessions marked for deletion to see if they have expired
+        for (const [key, deletionTime] of this.deletionTimes.entries()) {
+            if (now >= deletionTime) {
+                keysToDelete.push(key);
+            }
+        }
+
+        // Execute deletions
+        for (const key of keysToDelete) {
+            this.executeDeletion(key);
+            this.deletionTimes.delete(key);
+        }
+
+        if (keysToDelete.length > 0) {
+            logger.info(`Cleanup completed: deleted ${keysToDelete.length} expired sessions`);
+        }
+    }
+
+    private executeDeletion(key: string): void {
+        const parts = key.split('-');
+        if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+            logger.error(`Invalid key format for deletion: ${key}`);
+            return;
+        }
+
+        const [apiKey, sessionId, type] = parts as [string, string, string];
+        const isMcp = type === 'mcp';
+
+        if (isMcp) {
+            if (this.mcpTransports[apiKey]) {
+                delete this.mcpTransports[apiKey][sessionId];
+            }
+            if (this.mcpServers[apiKey]) {
+                delete this.mcpServers[apiKey][sessionId];
+            }
+        } else {
+            if (this.sseTransports[apiKey]) {
+                delete this.sseTransports[apiKey][sessionId];
+            }
+        }
+
+        this.sessionStates.set(key, 'expired');
+        logger.info(`Delayed deletion completed for ${key}`);
+    }
+
+    private delayedDelete(apiKey: string, sessionId: string, isMcp: boolean = true): void {
+        const key = `${apiKey}-${sessionId}-${isMcp ? 'mcp' : 'sse'}`;
+
+        // Set deletion timestamp for 5 minutes from now
+        const deletionTime = Date.now() + 300000; // 5 minute delay
+        this.deletionTimes.set(key, deletionTime);
+        this.sessionStates.set(key, 'paused');
+
+        logger.info(`Scheduled delayed deletion for ${key} in 5 minutes`);
+    }
+
+    private cancelDelayedDelete(apiKey: string, sessionId: string, isMcp: boolean = true): void {
+        const key = `${apiKey}-${sessionId}-${isMcp ? 'mcp' : 'sse'}`;
+        if (this.deletionTimes.has(key)) {
+            this.deletionTimes.delete(key);
+            this.sessionStates.set(key, 'active');
+            logger.info(`Cancelled delayed deletion for ${key}`);
+        }
     }
 
     private setupRoutes(): void {
@@ -81,6 +161,8 @@ export class CombinedMCPServer {
             sessionId && this.mcpTransports[apiKey] ? this.mcpTransports[apiKey][sessionId] : undefined;
 
         if (sessionId && transport) {
+            // If connection becomes active again, cancel delayed deletion
+            this.cancelDelayedDelete(apiKey, sessionId, true);
             await transport.handleRequest(req, res, req.body);
             return;
         }
@@ -101,11 +183,9 @@ export class CombinedMCPServer {
 
             const server = new AnyCrawlMCPServer(apiKey, this.config.baseUrl);
             newTransport.onclose = () => {
-                if (newTransport.sessionId && this.mcpTransports[apiKey]) {
-                    delete this.mcpTransports[apiKey][newTransport.sessionId];
-                    if (this.mcpServers[apiKey]) {
-                        delete this.mcpServers[apiKey][newTransport.sessionId];
-                    }
+                if (newTransport.sessionId) {
+                    // Use delayed deletion instead of immediate deletion
+                    this.delayedDelete(apiKey, newTransport.sessionId, true);
                 }
             };
 
@@ -114,6 +194,13 @@ export class CombinedMCPServer {
             }
             const sessionId = newTransport.sessionId ?? 'pending';
             this.mcpServers[apiKey][sessionId] = server;
+
+            // Set initial session state as active
+            if (sessionId !== 'pending') {
+                const key = `${apiKey}-${sessionId}-mcp`;
+                this.sessionStates.set(key, 'active');
+            }
+
             await server.connectTransport(newTransport);
             await newTransport.handleRequest(req, res, req.body);
             return;
@@ -135,6 +222,7 @@ export class CombinedMCPServer {
 
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
         if (!sessionId || !this.mcpTransports[apiKey] || !this.mcpTransports[apiKey][sessionId]) {
+            logger.warn(`Invalid or missing session ID for API key ${apiKey}, sessionId: ${sessionId}`);
             res.status(400).send('Invalid or missing session ID');
             return;
         }
@@ -175,10 +263,13 @@ export class CombinedMCPServer {
             const transport = new SSEServerTransport('/messages', res);
             this.sseTransports[apiKey][transport.sessionId] = transport;
 
+            // Set initial session state as active
+            const key = `${apiKey}-${transport.sessionId}-sse`;
+            this.sessionStates.set(key, 'active');
+
             res.on("close", () => {
-                if (this.sseTransports[apiKey]) {
-                    delete this.sseTransports[apiKey][transport.sessionId];
-                }
+                // Use delayed deletion instead of immediate deletion
+                this.delayedDelete(apiKey, transport.sessionId, false);
             });
 
             await this.sseServers[apiKey].connectTransport(transport);
@@ -211,6 +302,7 @@ export class CombinedMCPServer {
         if (transport) {
             await transport.handlePostMessage(req, res, req.body);
         } else {
+            logger.warn(`No transport found for sessionId ${sessionId} with API key ${apiKey}`);
             res.status(400).send('No transport found for sessionId');
         }
     }
@@ -244,7 +336,7 @@ export class CombinedMCPServer {
             logger.info(`Message handling completed for sessionId: ${sessionId}`);
             logger.info(`Response status: ${res.statusCode}, headers sent: ${res.headersSent}`);
         } else {
-            logger.warn(`No transport found for sessionId: ${sessionId}`);
+            logger.warn(`No transport found for sessionId: ${sessionId} across all API keys`);
             res.status(400).send('No transport found for sessionId');
         }
     }
@@ -264,5 +356,27 @@ export class CombinedMCPServer {
 
     public getApp(): express.Application {
         return this.app;
+    }
+
+    public stop(): void {
+        if (this.cleanupTimer) {
+            clearInterval(this.cleanupTimer);
+            this.cleanupTimer = null;
+            logger.info('Cleanup timer stopped');
+        }
+    }
+
+
+    // Get session state
+    public getSessionState(apiKey: string, sessionId: string, isMcp: boolean = true): 'active' | 'paused' | 'expired' | 'not_found' {
+        const key = `${apiKey}-${sessionId}-${isMcp ? 'mcp' : 'sse'}`;
+        return this.sessionStates.get(key) || 'not_found';
+    }
+
+    // Force cleanup of expired sessions (useful for testing or manual cleanup)
+    public forceCleanup(): number {
+        const beforeCount = this.deletionTimes.size;
+        this.performCleanup();
+        return beforeCount - this.deletionTimes.size;
     }
 }
