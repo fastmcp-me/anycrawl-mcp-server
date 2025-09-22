@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # AnyCrawl MCP Server with Nginx Docker Entrypoint
 # Integrated nginx proxy functionality

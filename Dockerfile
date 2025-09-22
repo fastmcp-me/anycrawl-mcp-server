@@ -51,8 +51,9 @@ COPY --from=builder --chown=anycrawl:nodejs /app/package*.json ./
 COPY --chown=anycrawl:nodejs docker/nginx.conf /etc/nginx/nginx.conf
 
 # Copy entrypoint script
-COPY --chown=anycrawl:nodejs docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh && \
+    chown anycrawl:nodejs /usr/local/bin/entrypoint.sh
 
 # Create nginx directories and set permissions
 RUN mkdir -p /var/log/nginx /var/lib/nginx /var/cache/nginx && \
