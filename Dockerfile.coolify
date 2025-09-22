@@ -1,0 +1,106 @@
+##########
+# Builder
+##########
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package manifest and lockfile
+COPY package.json package-lock.json ./
+
+# Install full dependencies for build
+RUN npm ci
+
+# Copy source
+COPY . .
+
+RUN npm run build
+
+# Prune to production dependencies for runtime image
+RUN npm prune --omit=dev
+
+##########
+# Runtime - Optimized for Coolify and SSE
+##########
+FROM node:20-alpine AS runtime
+
+WORKDIR /app
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && adduser -S anycrawl -u 1001
+
+# Only copy necessary runtime files
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+
+# Switch to non-root user
+USER anycrawl
+
+# Environment variables optimized for Coolify
+ENV NODE_ENV=production
+ENV LOG_LEVEL=info
+ENV ANYCRAWL_MODE=COMBINED
+ENV ANYCRAWL_PORT=3000
+ENV ANYCRAWL_HOST=0.0.0.0
+
+# Optimize Node.js for long connections and SSE
+ENV NODE_OPTIONS="--max-old-space-size=512 --max-semi-space-size=64"
+
+# Health check optimized for Coolify
+# Uses a more robust health check that handles SSE connections
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "
+    const http = require('http');
+    const options = {
+      hostname: 'localhost',
+      port: 3000,
+      path: '/health',
+      method: 'GET',
+      timeout: 5000
+    };
+    
+    const req = http.request(options, (res) => {
+      if (res.statusCode === 200) {
+        process.exit(0);
+      } else {
+        console.error('Health check failed with status:', res.statusCode);
+        process.exit(1);
+      }
+    });
+    
+    req.on('error', (err) => {
+      console.error('Health check error:', err.message);
+      process.exit(1);
+    });
+    
+    req.on('timeout', () => {
+      console.error('Health check timeout');
+      req.destroy();
+      process.exit(1);
+    });
+    
+    req.end();
+  " || exit 1
+
+# Expose port
+EXPOSE 3000
+
+# Add labels for Coolify
+LABEL coolify.managed=true
+LABEL coolify.type=application
+LABEL coolify.port=3000
+LABEL coolify.healthcheck=/health
+LABEL coolify.healthcheck.interval=30s
+LABEL coolify.healthcheck.timeout=10s
+LABEL coolify.healthcheck.retries=3
+LABEL coolify.proxy.buffering=false
+LABEL coolify.proxy.timeout=300s
+LABEL coolify.proxy.read_timeout=300s
+LABEL coolify.proxy.send_timeout=300s
+
+# Graceful shutdown handling
+STOPSIGNAL SIGTERM
+
+# Start the MCP server with optimized settings
+CMD ["node", "dist/cli.js"]
