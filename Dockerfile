@@ -1,47 +1,84 @@
-##########
-# Builder
-##########
-FROM node:20-alpine AS builder
+# AnyCrawl MCP Server with Nginx Dockerfile
+# Multi-stage build with nginx integration
+
+# Build stage
+FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# Copy package manifest and lockfile
-COPY package.json package-lock.json ./
+# Install build dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    curl
 
-# Install full dependencies for build
-RUN npm ci
+# Copy package files
+COPY package*.json ./
 
-# Copy source
+# Install all dependencies (including dev dependencies for build)
+RUN npm ci && npm cache clean --force
+
+# Copy source code
 COPY . .
 
+# Build the application
 RUN npm run build
 
-# Prune to production dependencies for runtime image
-RUN npm prune --omit=dev
+# Production stage with nginx
+FROM node:18-alpine AS production
 
-##########
-# Runtime
-##########
-FROM node:20-alpine AS runtime
+# Install runtime dependencies and nginx
+RUN apk add --no-cache \
+    curl \
+    netcat-openbsd \
+    dumb-init \
+    nginx
 
+# Create app user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S anycrawl -u 1001
+
+# Set working directory
 WORKDIR /app
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && adduser -S anycrawl -u 1001
+# Copy built application from builder stage
+COPY --from=builder --chown=anycrawl:nodejs /app/dist ./dist
+COPY --from=builder --chown=anycrawl:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=anycrawl:nodejs /app/package*.json ./
 
-# Only copy necessary runtime files
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
+# Copy nginx configuration
+COPY --chown=anycrawl:nodejs docker/nginx.conf /etc/nginx/nginx.conf
 
+# Copy entrypoint script
+COPY --chown=anycrawl:nodejs docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Create nginx directories and set permissions
+RUN mkdir -p /var/log/nginx /var/lib/nginx /var/cache/nginx && \
+    chown -R anycrawl:nodejs /var/log/nginx /var/lib/nginx /var/cache/nginx && \
+    chmod -R 755 /var/log/nginx /var/lib/nginx /var/cache/nginx
+
+# Switch to non-root user
 USER anycrawl
 
+# Expose ports
+EXPOSE 80 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+# Set default environment variables
 ENV NODE_ENV=production
-ENV LOG_LEVEL=info
+ENV ANYCRAWL_MODE=MCP_AND_SSE
+ENV ANYCRAWL_PORT=3000
+ENV ANYCRAWL_HOST=0.0.0.0
+ENV CLOUD_SERVICE=true
+ENV ANYCRAWL_BASE_URL=https://api.anycrawl.dev
 
-# Health check (stdio server doesn't expose a port; keep a simple noop)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "console.log('Health check passed')" || exit 1
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
 
-# Start the MCP server via node directly (no pnpm needed)
-CMD ["node", "dist/cli.js"]
+# Start the application
+CMD ["/usr/local/bin/entrypoint.sh"]

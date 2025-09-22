@@ -12,14 +12,8 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts",
-    "start:sse": "ANYCRAWL_MODE=SSE_SERVER node dist/cli.js",
-    "start:http": "ANYCRAWL_MODE=HTTP_STREAMABLE_SERVER node dist/cli.js",
-    "start:combined": "ANYCRAWL_MODE=COMBINED node dist/cli.js",
-    "start:local": "ANYCRAWL_MODE=runLocalServer node dist/cli.js",
-    "dev:sse": "ANYCRAWL_MODE=SSE_SERVER tsx src/cli.ts",
-    "dev:http": "ANYCRAWL_MODE=HTTP_STREAMABLE_SERVER tsx src/cli.ts",
-    "dev:combined": "ANYCRAWL_MODE=COMBINED tsx src/cli.ts",
-    "dev:local": "ANYCRAWL_MODE=runLocalServer tsx src/cli.ts",
+    "start:cloud": "ANYCRAWL_MODE=MCP_AND_SSE node dist/cli.js",
+    "dev:cloud": "ANYCRAWL_MODE=MCP_AND_SSE tsx src/cli.ts",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts",
@@ -45,11 +39,7 @@
   "license": "MIT",
   "dependencies": {
     "@anycrawl/js-sdk": "0.0.3",
-    "@modelcontextprotocol/sdk": "^1.17.5",
-    "axios": "^1.6.0",
-    "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "helmet": "^7.1.0",
+    "fastmcp": "^3.17.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {
@@ -59,7 +49,11 @@
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "6.21.0",
     "@typescript-eslint/parser": "6.21.0",
+    "axios": "^1.6.0",
+    "cors": "^2.8.5",
     "eslint": "^8.0.0",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
     "jest": "^29.0.0",
     "prettier": "^3.0.0",
     "ts-jest": "^29.0.0",
@@ -68,5 +62,11 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "overrides": {
+    "undici": "^5.29.0"
+  },
+  "resolutions": {
+    "undici": "^5.29.0"
   }
 }

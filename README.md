@@ -11,7 +11,7 @@
 - **Flexible Output**: Markdown, HTML, text, screenshots, and structured JSON
 - **Async Operations**: Non-blocking crawl jobs with status monitoring
 - **Error Handling**: Robust error handling and logging
-- **Multiple Modes**: Support for different deployment scenarios (STDIO, SSE_SERVER, HTTP_STREAMABLE_SERVER, runLocalServer)
+- **Multiple Modes**: Support for STDIO and Cloud modes with integrated Nginx proxy
 
 ## Installation
 

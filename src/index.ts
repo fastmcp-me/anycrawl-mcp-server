@@ -1,167 +1,174 @@
 #!/usr/bin/env node
 
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { FastMCP, type Context, type Tool } from 'fastmcp';
 import { logger } from './logger.js';
-import express, { Request, Response } from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import { randomUUID } from 'node:crypto';
 import { AnyCrawlMCPServer } from './mcp-server.js';
+import { IncomingHttpHeaders } from 'http';
 
-// Main execution
-async function main() {
-    const apiKey = process.env.ANYCRAWL_API_KEY;
-    const baseUrl = process.env.ANYCRAWL_BASE_URL;
-    const mode = process.env.ANYCRAWL_MODE || 'STDIO';
+// Session data interface
+interface SessionData extends Record<string, unknown> {
+    anycrawlApiKey: string;
+    baseUrl?: string;
+}
 
-    if (!apiKey) {
-        logger.error('ANYCRAWL_API_KEY environment variable is required');
-        process.exit(1);
+// Extract API key from headers
+function extractApiKey(headers: IncomingHttpHeaders): string | null {
+    // Try x-anycrawl-api-key header first
+    const anycrawlApiKey = headers['x-anycrawl-api-key'] || headers['X-AnyCrawl-Api-Key'];
+    if (typeof anycrawlApiKey === 'string') {
+        return anycrawlApiKey;
     }
 
-    try {
-        if (mode === 'HTTP_STREAMABLE_SERVER') {
-            const port = Number(process.env.ANYCRAWL_PORT || 3000);
-            const host = process.env.ANYCRAWL_HOST || '0.0.0.0';
+    // Fallback to Authorization header
+    const authHeader = headers.authorization || headers.Authorization;
+    if (typeof authHeader === 'string') {
+        // Handle "Bearer <token>" format
+        const match = authHeader.match(/^Bearer\s+(.+)$/i);
+        if (match) {
+            return match[1] || null;
+        }
+        // Handle direct token
+        return authHeader || null;
+    }
+    return null;
+}
 
-            const app = express();
-            app.use(helmet());
-            app.use(express.json({ limit: '5mb' }));
-            app.use(cors({
-                origin: '*',
-                exposedHeaders: ['Mcp-Session-Id'],
-                allowedHeaders: ['Content-Type', 'mcp-session-id'],
-            }));
+// Create FastMCP server instance
+const server = new FastMCP<SessionData>({
+    name: 'anycrawl-fastmcp',
+    version: '0.0.6',
+    logger: {
+        debug: (message: string, data?: any) => logger.debug(message, data),
+        error: (message: string, data?: any) => logger.error(message, data),
+        info: (message: string, data?: any) => logger.info(message, data),
+        log: (message: string, data?: any) => logger.info(message, data),
+        warn: (message: string, data?: any) => logger.warn(message, data),
+    },
+    roots: { enabled: false },
+    authenticate: async (request: { headers: IncomingHttpHeaders }): Promise<SessionData> => {
+        if (process.env.CLOUD_SERVICE === 'true') {
+            const apiKey = extractApiKey(request.headers);
 
-            app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok', mode }));
-
-            const transports: Record<string, StreamableHTTPServerTransport> = {};
-            const servers: Record<string, AnyCrawlMCPServer> = {};
-
-            app.post('/mcp', async (req: Request, res: Response) => {
-                const sessionId = req.headers['mcp-session-id'] as string | undefined;
-                let transport: StreamableHTTPServerTransport | undefined = sessionId ? transports[sessionId] : undefined;
-
-                if (sessionId && transport) {
-                    await transport.handleRequest(req, res, req.body);
-                    return;
-                }
-
-                if (!sessionId && isInitializeRequest(req.body)) {
-                    // Create transport and server for new session
-                    const newTransport = new StreamableHTTPServerTransport({
-                        sessionIdGenerator: () => randomUUID(),
-                        enableJsonResponse: true,
-                        onsessioninitialized: (sid) => {
-                            transports[sid] = newTransport;
-                        },
-                        // enableDnsRebindingProtection: true,
-                        // allowedHosts: ['127.0.0.1'],
-                    });
-                    const server = new AnyCrawlMCPServer(apiKey, baseUrl);
-                    newTransport.onclose = () => {
-                        if (newTransport.sessionId) {
-                            delete transports[newTransport.sessionId];
-                            delete servers[newTransport.sessionId];
-                        }
-                    };
-                    servers[newTransport.sessionId ?? 'pending'] = server;
-                    await server.connectTransport(newTransport);
-                    await newTransport.handleRequest(req, res, req.body);
-                    return;
-                }
-
-                res.status(400).json({
-                    jsonrpc: '2.0',
-                    error: { code: -32000, message: 'Bad Request: No valid session ID provided' },
-                    id: null,
-                });
-            });
-
-            const handleSessionRequest = async (req: Request, res: Response) => {
-                const sessionId = req.headers['mcp-session-id'] as string | undefined;
-                if (!sessionId || !transports[sessionId]) {
-                    res.status(400).send('Invalid or missing session ID');
-                    return;
-                }
-                const transport = transports[sessionId];
-                await transport.handleRequest(req, res);
+            if (!apiKey) {
+                throw new Error('AnyCrawl API key is required');
+            }
+            return { anycrawlApiKey: apiKey };
+        } else {
+            // For self-hosted instances, use default base URL if not provided
+            const baseUrl = process.env.ANYCRAWL_BASE_URL || 'https://api.anycrawl.dev';
+            return {
+                anycrawlApiKey: process.env.ANYCRAWL_API_KEY || '',
+                baseUrl
             };
-
-            app.get('/mcp', handleSessionRequest);
-            app.delete('/mcp', handleSessionRequest);
-
-            await new Promise<void>((resolve) => {
-                app.listen(port, host, () => {
-                    logger.info(`MCP Streamable HTTP Server listening on http://${host}:${port}`);
-                    resolve();
-                });
-            });
-            return;
         }
+    },
+    // Lightweight health endpoint for LB checks
+    health: {
+        enabled: true,
+        message: 'ok',
+        path: '/health',
+        status: 200,
+    },
+});
 
-        if (mode === 'SSE_SERVER') {
-            // SSE server for legacy clients
+// Helper function to get AnyCrawl MCP Server instance
+function getAnyCrawlMCPServer(session: SessionData): AnyCrawlMCPServer {
+    return new AnyCrawlMCPServer(session.anycrawlApiKey, session.baseUrl);
+}
+
+// Create tools that delegate to AnyCrawlMCPServer
+const createTool = (toolDef: { name: string; description: string }): Tool<SessionData> => ({
+    name: toolDef.name,
+    description: toolDef.description,
+    execute: async (args, context) => {
+        const mcpServer = getAnyCrawlMCPServer(context.session!);
+
+        try {
+            context.log.info(`Executing ${toolDef.name} tool`, { args: JSON.stringify(args) });
+
+            // Use the existing MCP server's tool handling
+            const result = await mcpServer.handleToolCall({ name: toolDef.name, arguments: args });
+
+            return {
+                type: 'text',
+                text: JSON.stringify(result, null, 2)
+            };
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            context.log.error(`${toolDef.name} tool execution failed`, { error: errorMessage });
+            throw new Error(`${toolDef.name} failed: ${errorMessage}`);
+        }
+    },
+    annotations: {
+        readOnlyHint: toolDef.name !== 'anycrawl_cancel_crawl',
+        openWorldHint: ['anycrawl_scrape', 'anycrawl_crawl', 'anycrawl_search'].includes(toolDef.name),
+        destructiveHint: toolDef.name === 'anycrawl_cancel_crawl',
+        title: toolDef.name.replace('anycrawl_', '').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }
+});
+
+// Get tool definitions from AnyCrawlMCPServer and add them to FastMCP
+const tempServer = new AnyCrawlMCPServer('temp', undefined);
+const toolDefinitions = tempServer.getToolDefinitions();
+
+// Add all tools to the server
+toolDefinitions.forEach(toolDef => {
+    server.addTool(createTool(toolDef));
+});
+
+// Main execution function
+async function main() {
+    const mode = process.env.ANYCRAWL_MODE || 'STDIO';
+
+    try {
+        if (mode === 'MCP_AND_SSE') {
+            // Cloud mode - supports both MCP protocol and SSE endpoints
             const port = Number(process.env.ANYCRAWL_PORT || 3000);
             const host = process.env.ANYCRAWL_HOST || '0.0.0.0';
 
-            const app = express();
-            app.use(helmet());
-            app.use(express.json({ limit: '5mb' }));
-            app.use(cors({
-                origin: '*',
-                exposedHeaders: ['Mcp-Session-Id'],
-                allowedHeaders: ['Content-Type', 'mcp-session-id'],
-            }));
+            logger.info(`Starting AnyCrawl FastMCP Server in cloud mode on ${host}:${port}`);
+            logger.info('🚀 Server supports both MCP protocol (STDIO) and SSE endpoints');
+            logger.info('   MCP protocol: Available via STDIO');
+            logger.info(`   SSE endpoint: http://${host}:${port}/sse`);
 
-            app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok', mode }));
-
-            // Create a shared server instance for SSE
-            const server = new AnyCrawlMCPServer(apiKey, baseUrl);
-            const transports: Record<string, SSEServerTransport> = {};
-
-            // Legacy SSE endpoint for older clients
-            app.get('/sse', async (req: Request, res: Response) => {
-                // Create SSE transport for legacy clients
-                const transport = new SSEServerTransport('/messages', res);
-                transports[transport.sessionId] = transport;
-
-                res.on("close", () => {
-                    delete transports[transport.sessionId];
-                });
-
-                await server.connectTransport(transport);
-            });
-
-            // Legacy message endpoint for older clients
-            app.post('/messages', async (req: Request, res: Response) => {
-                const sessionId = req.query.sessionId as string;
-                const transport = transports[sessionId];
-                if (transport) {
-                    await transport.handlePostMessage(req, res, req.body);
-                } else {
-                    res.status(400).send('No transport found for sessionId');
+            await server.start({
+                transportType: 'httpStream',
+                httpStream: {
+                    host,
+                    port,
+                    enableJsonResponse: true,
                 }
             });
-
-            await new Promise<void>((resolve) => {
-                app.listen(port, host, () => {
-                    logger.info(`MCP SSE Server listening on http://${host}:${port}`);
-                    resolve();
-                });
+        } else {
+            // STDIO mode (default)
+            logger.info('Starting AnyCrawl FastMCP Server in STDIO mode');
+            await server.start({
+                transportType: 'stdio'
             });
-            return;
         }
-
-        // Default: stdio MCP server
-        const mcpServer = new AnyCrawlMCPServer(apiKey, baseUrl);
-        await mcpServer.run();
     } catch (error) {
         logger.error('Failed to start server:', error);
         process.exit(1);
     }
+}
+
+// Handle graceful shutdown
+process.on('SIGINT', () => {
+    logger.info('Received SIGINT, shutting down gracefully...');
+    server.stop().then(() => process.exit(0));
+});
+
+process.on('SIGTERM', () => {
+    logger.info('Received SIGTERM, shutting down gracefully...');
+    server.stop().then(() => process.exit(0));
+});
+
+// Start the server
+if (import.meta.url === `file://${process.argv[1]}`) {
+    main().catch((error) => {
+        logger.error('Unhandled error in main:', error);
+        process.exit(1);
+    });
 }
 
 export { main };
