@@ -79,13 +79,3 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Build and push combined
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.combined
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta-combined.outputs.tags }}
-          labels: ${{ steps.meta-combined.outputs.labels }}
