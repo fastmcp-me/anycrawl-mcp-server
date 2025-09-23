@@ -15,6 +15,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { AnyCrawlClient } from '@anycrawl/js-sdk';
 import { logger } from './logger.js';
+import { z } from 'zod';
 import {
     ScrapeToolSchema,
     CrawlToolSchema,
@@ -58,8 +59,8 @@ export class AnyCrawlMCPServer {
         }));
     }
 
-    // Internal method to get tool definitions with full schema
-    private getToolDefinitionsInternal() {
+    // Internal method to get tool definitions with zod schemas
+    private getToolDefinitionsInternal(): Array<{ name: string; description: string; inputSchema: any }> {
         return [
             {
                 name: 'anycrawl_scrape',
@@ -89,105 +90,7 @@ Examples:
 - Recommended: { "url": "https://example.com", "engine": "playwright" }
 - With JSON extraction: { "url": "https://news.ycombinator.com", "engine": "playwright", "formats": ["markdown"], "json_options": { "user_prompt": "Extract titles", "schema_name": "Articles" } }
 - With JSON schema extraction: { "url": "https://example.com/article", "engine": "playwright", "json_options": { "schema_name": "Article", "schema_description": "Extract article metadata and content", "schema": { "type": "object", "properties": { "title": { "type": "string" }, "author": { "type": "string" }, "date": { "type": "string" }, "content": { "type": "string" } }, "required": ["title", "content"] } } }`,
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        url: {
-                            type: 'string',
-                            format: 'uri',
-                            description: 'The URL to scrape. Must be a valid HTTP/HTTPS URL.',
-                            examples: ['https://example.com', 'https://news.ycombinator.com'],
-                        },
-                        engine: {
-                            type: 'string',
-                            enum: ['playwright', 'cheerio', 'puppeteer'],
-                            description: 'The scraping engine to use. RECOMMENDED: Playwright for best results with dynamic content and modern websites. Cheerio is fastest for static content, Puppeteer for Chrome automation.',
-                            default: 'playwright',
-                            examples: ['playwright', 'cheerio', 'puppeteer'],
-                        },
-                        proxy: {
-                            type: 'string',
-                            format: 'uri',
-                            description: 'Optional proxy URL for requests. Format: http://user:pass@host:port or socks5://host:port',
-                            examples: ['http://proxy.example.com:8080', 'socks5://127.0.0.1:1080'],
-                        },
-                        formats: {
-                            type: 'array',
-                            items: {
-                                type: 'string',
-                                enum: ['markdown', 'html', 'text', 'screenshot', 'screenshot@fullPage', 'rawHtml', 'json'],
-                            },
-                            description: 'Output formats to extract. Markdown is LLM-friendly, HTML preserves structure, screenshots capture visual content, JSON for structured data.',
-                            default: ['markdown'],
-                            examples: [['markdown'], ['markdown', 'html'], ['screenshot', 'markdown']],
-                        },
-                        timeout: {
-                            type: 'number',
-                            minimum: 1000,
-                            maximum: 600000,
-                            description: 'Request timeout in milliseconds. Default 5 minutes.',
-                            default: 300000,
-                            examples: [30000, 60000, 300000],
-                        },
-                        retry: {
-                            type: 'boolean',
-                            description: 'Whether to automatically retry on failure. Useful for unreliable networks.',
-                            default: false,
-                        },
-                        wait_for: {
-                            type: 'number',
-                            minimum: 1,
-                            maximum: 60000,
-                            description: 'Wait time in milliseconds for page to fully load. Useful for dynamic content.',
-                            examples: [1000, 3000, 5000],
-                        },
-                        include_tags: {
-                            type: 'array',
-                            items: { type: 'string' },
-                            description: 'HTML tags to include in extraction. Useful for filtering specific content.',
-                            examples: [['article', 'main'], ['h1', 'h2', 'p'], ['div.content']],
-                        },
-                        exclude_tags: {
-                            type: 'array',
-                            items: { type: 'string' },
-                            description: 'HTML tags to exclude from extraction. Useful for removing ads, navigation, etc.',
-                            examples: [['nav', 'footer', 'aside'], ['script', 'style'], ['div.advertisement']],
-                        },
-                        json_options: {
-                            type: 'object',
-                            description: 'Options for structured JSON extraction using AI. Define schema for consistent data extraction.',
-                            properties: {
-                                schema: {
-                                    type: 'object',
-                                    description: 'JSON schema defining the structure of extracted data',
-                                },
-                                user_prompt: {
-                                    type: 'string',
-                                    description: 'Natural language prompt for AI extraction',
-                                    examples: ['Extract the main article content, author, and publication date', 'Get product name, price, and description']
-                                },
-                                schema_name: {
-                                    type: 'string',
-                                    description: 'Name for the extraction schema',
-                                    examples: ['Article', 'Product', 'Event']
-                                },
-                                schema_description: {
-                                    type: 'string',
-                                    description: 'Description of what the schema extracts',
-                                    examples: ['Extract article metadata and content', 'Extract product information']
-                                }
-                            }
-                        },
-                        extract_source: {
-                            type: 'string',
-                            enum: ['html', 'markdown'],
-                            description: 'Source format for extraction. HTML preserves original structure, markdown is LLM-friendly.',
-                            default: 'markdown',
-                            examples: ['html', 'markdown'],
-                        },
-                    },
-                    required: ['url', 'engine'],
-                }
+                inputSchema: ScrapeToolSchema
             },
             {
                 name: 'anycrawl_crawl',
@@ -218,107 +121,7 @@ Examples:
 - Recommended: { "url": "https://example.com", "engine": "playwright", "limit": 50 }
 - Deep crawl: { "url": "https://docs.example.com", "engine": "playwright", "max_depth": 5, "limit": 200 }
 - Filtered crawl: { "url": "https://blog.example.com", "engine": "playwright", "include_paths": ["/posts/*"], "exclude_paths": ["/admin/*"] }`,
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        url: {
-                            type: 'string',
-                            format: 'uri',
-                            description: 'Starting URL to crawl. Must be a valid HTTP/HTTPS URL.',
-                            examples: ['https://example.com', 'https://docs.example.com'],
-                        },
-                        engine: {
-                            type: 'string',
-                            enum: ['playwright', 'cheerio', 'puppeteer'],
-                            description: 'The crawling engine to use. RECOMMENDED: Playwright for best results with dynamic content and modern websites. Cheerio is fastest for static content, Puppeteer for Chrome automation.',
-                            default: 'playwright',
-                            examples: ['playwright', 'cheerio', 'puppeteer'],
-                        },
-                        max_depth: {
-                            type: 'number',
-                            minimum: 1,
-                            maximum: 50,
-                            description: 'Maximum depth to crawl from the starting URL.',
-                            default: 10,
-                            examples: [3, 5, 10, 20],
-                        },
-                        limit: {
-                            type: 'number',
-                            minimum: 1,
-                            maximum: 50000,
-                            description: 'Maximum number of pages to crawl.',
-                            default: 100,
-                            examples: [10, 50, 100, 1000],
-                        },
-                        strategy: {
-                            type: 'string',
-                            enum: ['all', 'same-domain', 'same-hostname', 'same-origin'],
-                            description: 'Crawling strategy. same-domain is most common, all crawls everything, same-hostname includes subdomains, same-origin is strictest.',
-                            default: 'same-domain',
-                            examples: ['same-domain', 'same-hostname', 'all'],
-                        },
-                        include_paths: {
-                            type: 'array',
-                            items: { type: 'string' },
-                            description: 'Path patterns to include in crawling. Supports wildcards.',
-                            examples: [['/blog/*', '/articles/*'], ['/docs/**'], ['/posts/*']],
-                        },
-                        exclude_paths: {
-                            type: 'array',
-                            items: { type: 'string' },
-                            description: 'Path patterns to exclude from crawling. Supports wildcards.',
-                            examples: [['/admin/*', '/private/*'], ['/api/**'], ['/login', '/logout']],
-                        },
-                        retry: {
-                            type: 'boolean',
-                            description: 'Whether to automatically retry failed requests.',
-                            default: false,
-                        },
-                        poll_seconds: {
-                            type: 'number',
-                            minimum: 1,
-                            maximum: 60,
-                            description: 'Polling interval in seconds for checking job status.',
-                            default: 3,
-                            examples: [1, 3, 5, 10],
-                        },
-                        poll_interval_ms: {
-                            type: 'number',
-                            minimum: 100,
-                            maximum: 60000,
-                            description: 'Polling interval in milliseconds for checking job status.',
-                            default: 3000,
-                            examples: [1000, 3000, 5000],
-                        },
-                        timeout_ms: {
-                            type: 'number',
-                            minimum: 1000,
-                            maximum: 600000,
-                            description: 'Job timeout in milliseconds.',
-                            default: 60000,
-                            examples: [30000, 60000, 300000],
-                        },
-                        scrape_options: {
-                            type: 'object',
-                            description: 'Options for scraping each page during crawl. Same as scrape tool options.',
-                            properties: {
-                                proxy: { type: 'string', format: 'uri' },
-                                formats: {
-                                    type: 'array',
-                                    items: { type: 'string', enum: ['markdown', 'html', 'text', 'screenshot', 'screenshot@fullPage', 'rawHtml', 'json'] }
-                                },
-                                timeout: { type: 'number', minimum: 1000, maximum: 600000 },
-                                wait_for: { type: 'number', minimum: 1, maximum: 60000 },
-                                include_tags: { type: 'array', items: { type: 'string' } },
-                                exclude_tags: { type: 'array', items: { type: 'string' } },
-                                json_options: { type: 'object' },
-                                extract_source: { type: 'string', enum: ['html', 'markdown'] },
-                                engine: { type: 'string', enum: ['playwright', 'cheerio', 'puppeteer'] }
-                            }
-                        }
-                    },
-                    required: ['url', 'engine'],
-                }
+                inputSchema: CrawlToolSchema
             },
             {
                 name: 'anycrawl_search',
@@ -346,80 +149,7 @@ Examples:
 - Recommended: { "query": "artificial intelligence news", "limit": 5 }
 - With scraping: { "query": "TypeScript tutorials", "limit": 5, "scrape_options": { "formats": ["markdown"], "engine": "playwright" } }
 - Localized search: { "query": "machine learning", "lang": "es", "country": "ES", "limit": 5 }`,
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        query: {
-                            type: 'string',
-                            description: 'Search query string.',
-                            examples: ['artificial intelligence', 'TypeScript tutorials', 'machine learning news'],
-                        },
-                        engine: {
-                            type: 'string',
-                            enum: ['google'],
-                            description: 'Search engine to use. Currently only Google is supported.',
-                            default: 'google',
-                        },
-                        limit: {
-                            type: 'number',
-                            minimum: 1,
-                            maximum: 100,
-                            description: 'Number of search results to return. RECOMMENDED: 5 for balanced performance and cost.',
-                            default: 5,
-                            examples: [5, 10, 20, 50],
-                        },
-                        offset: {
-                            type: 'number',
-                            minimum: 0,
-                            description: 'Number of results to skip (for pagination).',
-                            default: 0,
-                            examples: [0, 10, 20, 50],
-                        },
-                        pages: {
-                            type: 'number',
-                            minimum: 1,
-                            maximum: 20,
-                            description: 'Number of search result pages to process.',
-                            examples: [1, 2, 5, 10],
-                        },
-                        lang: {
-                            type: 'string',
-                            description: 'Language code for localized search results.',
-                            examples: ['en', 'es', 'fr', 'de', 'zh'],
-                        },
-                        country: {
-                            type: 'string',
-                            description: 'Country code for localized search results.',
-                            examples: ['US', 'ES', 'FR', 'DE', 'CN'],
-                        },
-                        safeSearch: {
-                            type: 'number',
-                            minimum: 0,
-                            maximum: 2,
-                            description: 'Safe search level: 0=off, 1=moderate, 2=strict.',
-                            examples: [0, 1, 2],
-                        },
-                        scrape_options: {
-                            type: 'object',
-                            description: 'Options for scraping search results. Same as scrape tool options.',
-                            properties: {
-                                engine: { type: 'string', enum: ['playwright', 'cheerio', 'puppeteer'] },
-                                proxy: { type: 'string', format: 'uri' },
-                                formats: {
-                                    type: 'array',
-                                    items: { type: 'string', enum: ['markdown', 'html', 'text', 'screenshot', 'screenshot@fullPage', 'rawHtml', 'json'] }
-                                },
-                                timeout: { type: 'number', minimum: 1000, maximum: 600000 },
-                                wait_for: { type: 'number', minimum: 1, maximum: 60000 },
-                                include_tags: { type: 'array', items: { type: 'string' } },
-                                exclude_tags: { type: 'array', items: { type: 'string' } },
-                                json_options: { type: 'object' },
-                                extract_source: { type: 'string', enum: ['html', 'markdown'] }
-                            }
-                        }
-                    },
-                    required: ['query'],
-                }
+                inputSchema: SearchToolSchema
             },
             {
                 name: 'anycrawl_crawl_status',
@@ -434,17 +164,7 @@ Returns: { job_id, status, start_time, expires_at, credits_used, total, complete
 
 Examples:
 - Check status: { "job_id": "crawl_12345" }`,
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        job_id: {
-                            type: 'string',
-                            description: 'The crawl job ID to check status for.',
-                            examples: ['crawl_12345', 'crawl_67890'],
-                        },
-                    },
-                    required: ['job_id'],
-                }
+                inputSchema: CrawlStatusToolSchema
             },
             {
                 name: 'anycrawl_crawl_results',
@@ -461,24 +181,7 @@ Returns: { status, total, completed, creditsUsed, next?, data[] }
 Examples:
 - Get all results: { "job_id": "crawl_12345" }
 - Paginated results: { "job_id": "crawl_12345", "skip": 50 }`,
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        job_id: {
-                            type: 'string',
-                            description: 'The crawl job ID to get results for.',
-                            examples: ['crawl_12345', 'crawl_67890'],
-                        },
-                        skip: {
-                            type: 'number',
-                            minimum: 0,
-                            description: 'Number of results to skip (for pagination).',
-                            default: 0,
-                            examples: [0, 10, 50, 100],
-                        },
-                    },
-                    required: ['job_id'],
-                }
+                inputSchema: CrawlResultsToolSchema
             },
             {
                 name: 'anycrawl_cancel_crawl',
@@ -493,17 +196,7 @@ Returns: { success: boolean, message: string }
 
 Examples:
 - Cancel job: { "job_id": "crawl_12345" }`,
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        job_id: {
-                            type: 'string',
-                            description: 'The crawl job ID to cancel.',
-                            examples: ['crawl_12345', 'crawl_67890'],
-                        },
-                    },
-                    required: ['job_id'],
-                }
+                inputSchema: CancelCrawlToolSchema
             }
         ];
     }

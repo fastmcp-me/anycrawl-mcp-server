@@ -4,6 +4,7 @@ import { FastMCP, type Context, type Tool } from 'fastmcp';
 import { logger } from './logger.js';
 import { AnyCrawlMCPServer } from './mcp-server.js';
 import { IncomingHttpHeaders } from 'http';
+import { z } from 'zod';
 
 // Session data interface
 interface SessionData extends Record<string, unknown> {
@@ -76,6 +77,7 @@ function getAnyCrawlMCPServer(session: SessionData): AnyCrawlMCPServer {
     return new AnyCrawlMCPServer(session.anycrawlApiKey, session.baseUrl);
 }
 
+
 // Create tools that delegate to AnyCrawlMCPServer
 const createTool = (toolDef: { name: string; description: string; parameters: any }): Tool<SessionData> => ({
     name: toolDef.name,
@@ -87,13 +89,8 @@ const createTool = (toolDef: { name: string; description: string; parameters: an
         try {
             context.log.info(`Executing ${toolDef.name} tool`, { args: JSON.stringify(args) });
 
-            // Validate args before passing to MCP server
-            if (!args || typeof args !== 'object') {
-                throw new Error(`Invalid arguments: expected object, got ${typeof args}`);
-            }
-
-            // Use the existing MCP server's tool handling
-            const result = await mcpServer.handleToolCall({ name: toolDef.name, arguments: args });
+            // FastMCP passes args as the first parameter, not as arguments property
+            const result = await mcpServer.handleToolCall({ name: toolDef.name, arguments: args || {} });
 
             return {
                 type: 'text',
@@ -118,8 +115,12 @@ const tempServer = new AnyCrawlMCPServer('temp', undefined);
 const toolDefinitions = tempServer.getToolDefinitions();
 
 // Add all tools to the server
-toolDefinitions.forEach(toolDef => {
-    server.addTool(createTool(toolDef));
+toolDefinitions.forEach((toolDef: { name: string; description: string; parameters: any }) => {
+    server.addTool(createTool({
+        name: toolDef.name,
+        description: toolDef.description,
+        parameters: toolDef.parameters
+    }));
 });
 
 // Main execution function
