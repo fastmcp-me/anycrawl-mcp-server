@@ -23,7 +23,7 @@ import {
     CrawlStatusToolSchema,
     CrawlResultsToolSchema,
     CancelCrawlToolSchema,
-} from './types.js';
+} from './schemas.js';
 
 export class AnyCrawlMCPServer {
     private server: Server;
