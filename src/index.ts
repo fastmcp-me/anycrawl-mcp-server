@@ -128,7 +128,7 @@ addToolsToServer(server);
 
 // Main execution function
 async function main() {
-    const mode = process.env.ANYCRAWL_MODE || 'MCP';
+    const mode = process.env.ANYCRAWL_MODE || 'STDIO';
 
     try {
         if (mode === 'MCP') {

@@ -11,7 +11,7 @@
 - **Flexible Output**: Markdown, HTML, text, screenshots, and structured JSON
 - **Async Operations**: Non-blocking crawl jobs with status monitoring
 - **Error Handling**: Robust error handling and logging
-- **Multiple Modes**: Support for STDIO and Cloud modes with integrated Nginx proxy
+- **Multiple Modes**: STDIO (default), MCP(HTTP), SSE; cloud-ready with Nginx proxy
 
 ## Installation
 
@@ -25,6 +25,7 @@ ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
 
 ```bash
 npm install -g anycrawl-mcp-server
+
 ANYCRAWL_API_KEY=YOUR-API-KEY anycrawl-mcp
 ```
 
@@ -55,20 +56,24 @@ export ANYCRAWL_BASE_URL="https://api.anycrawl.dev"  # Default
 
 AnyCrawl MCP Server supports the following deployment modes:
 
-| Mode          | Description                        | Best For                                  | Transport       |
-| ------------- | ---------------------------------- | ----------------------------------------- | --------------- |
-| `MCP`         | Streamable HTTP (JSON, stateful)   | Cursor (streamable_http), API integration | HTTP + JSON     |
-| `SSE`         | Server-Sent Events                 | Web apps, browser integrations            | HTTP + SSE      |
-| `MCP_AND_SSE` | Start MCP and SSE in one container | Cloud/service deploy with Nginx frontend  | HTTP + JSON/SSE |
+Default mode is `STDIO` (no env needed). Set `ANYCRAWL_MODE` to switch.
+
+| Mode    | Description                       | Best For                                  | Transport   |
+| ------- | --------------------------------- | ----------------------------------------- | ----------- |
+| `STDIO` | Standard MCP over stdio (default) | Command-type MCP clients, local tooling   | stdio       |
+| `MCP`   | Streamable HTTP (JSON, stateful)  | Cursor (streamable_http), API integration | HTTP + JSON |
+| `SSE`   | Server-Sent Events                | Web apps, browser integrations            | HTTP + SSE  |
 
 #### Quick Start Commands
 
 ```bash
 # Development (local)
+npm run dev            # STDIO (default)
 npm run dev:mcp          # MCP mode (JSON /mcp)
 npm run dev:sse          # SSE mode (/sse)
 
 # Production (built output)
+npm start              # STDIO (default)
 npm run start:mcp
 npm run start:sse
 
@@ -84,17 +89,6 @@ This repo ships a production-ready image that runs MCP (JSON) on port 3000 and S
 ```bash
 docker compose build
 docker compose up -d
-
-# Direct upstreams
-curl -s http://localhost:3000/health
-curl -s -N http://localhost:3001/sse -H "Accept: text/event-stream" | head -5
-
-# Through Nginx with API key in path
-curl -s -X POST http://localhost/YOUR_API_KEY/mcp \
-  -H 'Accept: application/json, text/event-stream' \
-  -H 'Content-Type: application/json' \
-  -H 'Mcp-Protocol-Version: 2025-03-26' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"curl","version":"0.0.0"},"capabilities":{}}}'
 ```
 
 Environment variables used in Docker image:
@@ -220,7 +214,7 @@ The SSE (Server-Sent Events) mode provides a web-based interface for MCP communi
 
 ```bash
 # Development mode
-ANYCRAWL_MODE=SSE_SERVER ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
 
 # Or using npm scripts
 ANYCRAWL_API_KEY=YOUR-API-KEY npm run dev:sse
@@ -235,58 +229,38 @@ export ANYCRAWL_PORT=3000
 export ANYCRAWL_HOST=0.0.0.0
 ```
 
-#### Available Endpoints
-
-- **GET `/health`** - Health check endpoint
-- **GET `/sse`** - SSE connection endpoint for MCP clients
-- **POST `/messages`** - Message handling endpoint for SSE clients
-
 #### Health Check
 
 ```bash
 curl -s http://localhost:${ANYCRAWL_PORT:-3000}/health
-# Response: {"status":"ok","mode":"SSE_SERVER"}
+# Response: ok
 ```
 
-#### MCP Client Configuration
+#### Generic MCP/SSE Client Configuration
 
-The SSE server provides a web-based MCP interface that can be used with various MCP clients.
-
-**Available Endpoints:**
-
-- `GET /sse` - SSE connection endpoint for MCP clients
-- `POST /messages` - Message handling endpoint for SSE clients
-- `GET /health` - Health check endpoint
-
-#### Cursor Configuration for SSE Mode
-
-For Cursor v0.48.6 and newer, you can configure Cursor to connect to the SSE server:
-
-```json
-{
-  "mcpServers": {
-    "anycrawl-sse": {
-      "type": "sse",
-      "url": "http://localhost:3000/sse"
-    }
-  }
-}
-```
-
-**Note:** The API key is set when starting the server, not in the Cursor configuration.
-
-#### Generic MCP Client Configuration
-
-For other MCP clients that support SSE transport, use this configuration:
+For other MCP/SSE clients that support SSE transport, use this configuration:
 
 ```json
 {
   "mcpServers": {
     "anycrawl": {
       "type": "sse",
-      "url": "http://localhost:3000/sse",
+      "url": "https://mcp.anycrawl.dev/{API_KEY}/sse",
       "name": "AnyCrawl MCP Server",
       "description": "Web scraping and crawling tools"
+    }
+  }
+}
+```
+
+or
+
+```json
+{
+  "mcpServers": {
+    "AnyCrawl": {
+      "type": "streamable_http",
+      "url": "https://mcp.anycrawl.dev/{API_KEY}/mcp"
     }
   }
 }
@@ -297,62 +271,6 @@ For other MCP clients that support SSE transport, use this configuration:
 ```bash
 # Start SSE server with API key
 ANYCRAWL_API_KEY=your-api-key-here npm run dev:sse
-```
-
-#### Key Features
-
-- **Web-based MCP interface** for easy integration
-- **Real-time communication** with Server-Sent Events
-- **CORS-enabled** for cross-origin requests
-- **Health monitoring** with built-in endpoints
-- **Session management** with automatic ID handling
-
-### Running with HTTP Streamable Server (stateful)
-
-Run the HTTP server that maintains MCP sessions via `Mcp-Session-Id` header.
-
-```bash
-ANYCRAWL_MODE=HTTP_STREAMABLE_SERVER ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
-# or
-ANYCRAWL_API_KEY=YOUR-API-KEY npm run dev:http
-# or (built output)
-ANYCRAWL_API_KEY=YOUR-API-KEY npm run start:http
-```
-
-Optional server settings (defaults shown):
-
-```bash
-export ANYCRAWL_PORT=3000
-export ANYCRAWL_HOST=127.0.0.1
-```
-
-Health check:
-
-```bash
-curl -s http://127.0.0.1:${ANYCRAWL_PORT:-3000}/health
-```
-
-Initialize MCP session (expects `Mcp-Session-Id` in response headers):
-
-```bash
-curl -i -X POST http://127.0.0.1:${ANYCRAWL_PORT:-3000}/mcp \
-  -H 'Accept: application/json, text/event-stream' \
-  -H 'Content-Type: application/json' \
-  -H 'Mcp-Protocol-Version: 2025-03-26' \
-  -d '{
-    "jsonrpc":"2.0","id":1,"method":"initialize",
-    "params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"curl","version":"0.0.0"},"capabilities":{}}
-  }'
-```
-
-Open SSE stream using the returned session id:
-
-```bash
-SESSION_ID="<value from Mcp-Session-Id>"
-curl -i -N http://127.0.0.1:${ANYCRAWL_PORT:-3000}/mcp \
-  -H 'Accept: text/event-stream' \
-  -H "Mcp-Session-Id: ${SESSION_ID}" \
-  -H 'Mcp-Protocol-Version: 2025-03-26'
 ```
 
 ### Cursor configuration for HTTP modes (streamable_http)
@@ -372,20 +290,20 @@ Local HTTP Streamable Server:
 }
 ```
 
-Cloud/Remote deployment:
+Cloud HTTP Streamable Server:
 
 ```json
 {
   "mcpServers": {
     "anycrawl-http-cloud": {
       "type": "streamable_http",
-      "url": "https://your-domain.example.com/mcp"
+      "url": "https://mcp.anycrawl.dev/{API_KEY}/mcp"
     }
   }
 }
 ```
 
-Note: For HTTP modes, set `ANYCRAWL_API_KEY` (and optional host/port) in the server process environment. Cursor does not need your API key when using `streamable_http`.
+Note: For HTTP modes, set `ANYCRAWL_API_KEY` (and optional host/port) in the server process environment or in the URL. Cursor does not need your API key when using `streamable_http`.
 
 ## Available Tools
 
