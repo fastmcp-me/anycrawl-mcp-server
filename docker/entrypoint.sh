@@ -121,10 +121,7 @@ cleanup() {
 # Set up signal handlers
 trap cleanup SIGINT SIGTERM
 
-# Start nginx if enabled
-start_nginx
-
-# Start the server based on mode
+# Start the server based on mode (start Nginx AFTER services are healthy)
 case "$ANYCRAWL_MODE" in
     "MCP,SSE"|"SSE,MCP"|"MCP_AND_SSE")
         echo "📡 Starting MCP(JSON) on :$ANYCRAWL_MCP_PORT and SSE on :$ANYCRAWL_SSE_PORT"
@@ -139,6 +136,8 @@ case "$ANYCRAWL_MODE" in
         SSE_PID=$!
 
         if health_check "$ANYCRAWL_MCP_PORT" && health_check "$ANYCRAWL_SSE_PORT"; then
+            # Start Nginx after backends are ready
+            start_nginx
             echo "✅ MCP and SSE are ready"
             while true; do
                 sleep 1
@@ -155,6 +154,7 @@ case "$ANYCRAWL_MODE" in
         ANYCRAWL_PORT=$ANYCRAWL_MCP_PORT ANYCRAWL_MODE=MCP node dist/cli.js &
         MCP_PID=$!
         if health_check "$ANYCRAWL_MCP_PORT"; then
+            start_nginx
             while true; do
                 sleep 1
                 if ! kill -0 $MCP_PID 2>/dev/null; then echo "❌ MCP stopped"; cleanup; fi
@@ -168,6 +168,7 @@ case "$ANYCRAWL_MODE" in
         ANYCRAWL_PORT=$ANYCRAWL_SSE_PORT ANYCRAWL_MODE=SSE node dist/cli.js &
         SSE_PID=$!
         if health_check "$ANYCRAWL_SSE_PORT"; then
+            start_nginx
             while true; do
                 sleep 1
                 if ! kill -0 $SSE_PID 2>/dev/null; then echo "❌ SSE stopped"; cleanup; fi
