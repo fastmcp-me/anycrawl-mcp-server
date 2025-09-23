@@ -6,8 +6,10 @@
 set -e
 
 # Default values
-ANYCRAWL_MODE=${ANYCRAWL_MODE:-"STDIO"}
+ANYCRAWL_MODE=${ANYCRAWL_MODE:-"MCP"}
 ANYCRAWL_PORT=${ANYCRAWL_PORT:-3000}
+ANYCRAWL_MCP_PORT=${ANYCRAWL_MCP_PORT:-3000}
+ANYCRAWL_SSE_PORT=${ANYCRAWL_SSE_PORT:-3001}
 ANYCRAWL_HOST=${ANYCRAWL_HOST:-"0.0.0.0"}
 CLOUD_SERVICE=${CLOUD_SERVICE:-"false"}
 ENABLE_NGINX=${ENABLE_NGINX:-"true"}
@@ -15,7 +17,7 @@ ENABLE_NGINX=${ENABLE_NGINX:-"true"}
 # Log configuration
 echo "🚀 Starting AnyCrawl MCP Server with Nginx..."
 echo "   Mode: $ANYCRAWL_MODE"
-echo "   Port: $ANYCRAWL_PORT"
+echo "   Port: $ANYCRAWL_PORT (MCP:$ANYCRAWL_MCP_PORT, SSE:$ANYCRAWL_SSE_PORT)"
 echo "   Host: $ANYCRAWL_HOST"
 echo "   Cloud Service: $CLOUD_SERVICE"
 echo "   Nginx Enabled: $ENABLE_NGINX"
@@ -90,7 +92,7 @@ start_nginx() {
         # Check if nginx is running
         if kill -0 $NGINX_PID 2>/dev/null; then
             echo "✅ Nginx proxy is running on port 80"
-            echo "   Proxy endpoint: http://localhost/{API_KEY}/sse"
+            echo "   Proxy endpoints: http://localhost/{API_KEY}/mcp and /{API_KEY}/sse"
             echo "   Health check: http://localhost/health"
         else
             echo "❌ Failed to start Nginx proxy"
@@ -110,9 +112,9 @@ stop_nginx() {
 cleanup() {
     echo "🛑 Shutting down services..."
     stop_nginx
-    if [ -n "$SERVER_PID" ]; then
-        kill $SERVER_PID 2>/dev/null || true
-    fi
+    if [ -n "$SERVER_PID" ]; then kill $SERVER_PID 2>/dev/null || true; fi
+    if [ -n "$MCP_PID" ]; then kill $MCP_PID 2>/dev/null || true; fi
+    if [ -n "$SSE_PID" ]; then kill $SSE_PID 2>/dev/null || true; fi
     exit 0
 }
 
@@ -124,45 +126,59 @@ start_nginx
 
 # Start the server based on mode
 case "$ANYCRAWL_MODE" in
-    "STDIO")
-        echo "📡 Starting in STDIO mode (MCP protocol)"
-        exec node dist/cli.js
-        ;;
-    "MCP_AND_SSE")
-        echo "📡 Starting in cloud mode (MCP + SSE)"
-        echo "🚀 Server supports both MCP protocol (STDIO) and SSE endpoints"
-        echo "   MCP protocol: Available via STDIO"
-        echo "   SSE endpoint: http://localhost:$ANYCRAWL_PORT/sse"
-        
-        if [ "$ENABLE_NGINX" = "true" ]; then
-            echo "   Nginx proxy: http://localhost/{API_KEY}/sse"
-        fi
-        
-        # Start MCP server in background
-        node dist/cli.js &
-        SERVER_PID=$!
-        
-        # Wait for server to start
-        if health_check "$ANYCRAWL_PORT"; then
-            echo "✅ Server is ready on port $ANYCRAWL_PORT"
-            
-            # Keep the script running and wait for signals
+    "MCP,SSE"|"SSE,MCP"|"MCP_AND_SSE")
+        echo "📡 Starting MCP(JSON) on :$ANYCRAWL_MCP_PORT and SSE on :$ANYCRAWL_SSE_PORT"
+        echo "   MCP upstream: :$ANYCRAWL_MCP_PORT/mcp (stateful JSON)"
+        echo "   SSE upstream: :$ANYCRAWL_SSE_PORT/sse"
+
+        # Start MCP
+        ANYCRAWL_PORT=$ANYCRAWL_MCP_PORT ANYCRAWL_MODE=MCP node dist/cli.js &
+        MCP_PID=$!
+        # Start SSE
+        ANYCRAWL_PORT=$ANYCRAWL_SSE_PORT ANYCRAWL_MODE=SSE node dist/cli.js &
+        SSE_PID=$!
+
+        if health_check "$ANYCRAWL_MCP_PORT" && health_check "$ANYCRAWL_SSE_PORT"; then
+            echo "✅ MCP and SSE are ready"
             while true; do
                 sleep 1
-                # Check if server is still running
-                if ! kill -0 $SERVER_PID 2>/dev/null; then
-                    echo "❌ MCP server stopped unexpectedly"
-                    cleanup
-                fi
+                if ! kill -0 $MCP_PID 2>/dev/null; then echo "❌ MCP stopped"; cleanup; fi
+                if ! kill -0 $SSE_PID 2>/dev/null; then echo "❌ SSE stopped"; cleanup; fi
             done
         else
-            echo "❌ Failed to start server"
+            echo "❌ One of the services failed to start"
             cleanup
+        fi
+        ;;
+    "MCP")
+        echo "📡 Starting only MCP(JSON) on :$ANYCRAWL_MCP_PORT"
+        ANYCRAWL_PORT=$ANYCRAWL_MCP_PORT ANYCRAWL_MODE=MCP node dist/cli.js &
+        MCP_PID=$!
+        if health_check "$ANYCRAWL_MCP_PORT"; then
+            while true; do
+                sleep 1
+                if ! kill -0 $MCP_PID 2>/dev/null; then echo "❌ MCP stopped"; cleanup; fi
+            done
+        else
+            echo "❌ MCP failed to start"; cleanup
+        fi
+        ;;
+    "SSE")
+        echo "📡 Starting only SSE on :$ANYCRAWL_SSE_PORT"
+        ANYCRAWL_PORT=$ANYCRAWL_SSE_PORT ANYCRAWL_MODE=SSE node dist/cli.js &
+        SSE_PID=$!
+        if health_check "$ANYCRAWL_SSE_PORT"; then
+            while true; do
+                sleep 1
+                if ! kill -0 $SSE_PID 2>/dev/null; then echo "❌ SSE stopped"; cleanup; fi
+            done
+        else
+            echo "❌ SSE failed to start"; cleanup
         fi
         ;;
     *)
         echo "❌ Unknown mode: $ANYCRAWL_MODE"
-        echo "   Supported modes: STDIO, MCP_AND_SSE"
+        echo "   Supported modes: MCP, SSE"
         exit 1
         ;;
 esac

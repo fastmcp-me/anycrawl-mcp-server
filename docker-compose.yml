@@ -5,11 +5,12 @@ services:
   anycrawl-mcp:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.service
     container_name: anycrawl-mcp-server
     environment:
       - ANYCRAWL_MODE=MCP_AND_SSE
-      - ANYCRAWL_PORT=3000
+      - ANYCRAWL_MCP_PORT=3000
+      - ANYCRAWL_SSE_PORT=3001
       - ANYCRAWL_HOST=0.0.0.0
       - CLOUD_SERVICE=true
       - ANYCRAWL_BASE_URL=https://api.anycrawl.dev
@@ -17,6 +18,7 @@ services:
     ports:
       - '80:80' # Nginx proxy port
       - '3000:3000' # Direct MCP server port
+      - '3001:3001' # Direct SSE server port
     networks:
       - anycrawl-network
     restart: unless-stopped

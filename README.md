@@ -53,30 +53,57 @@ export ANYCRAWL_BASE_URL="https://api.anycrawl.dev"  # Default
 
 ### Available Modes
 
-AnyCrawl MCP Server supports multiple deployment modes to fit different use cases:
+AnyCrawl MCP Server supports the following deployment modes:
 
-| Mode                     | Description                     | Best For                                       | Transport                 |
-| ------------------------ | ------------------------------- | ---------------------------------------------- | ------------------------- |
-| `STDIO`                  | Standard input/output (default) | Cursor, Claude Desktop, CLI tools              | stdio                     |
-| `SSE_SERVER`             | Server-Sent Events web server   | Web applications, testing, browser integration | HTTP + SSE                |
-| `HTTP_STREAMABLE_SERVER` | Stateful HTTP server            | Microservices, API integration                 | HTTP with session headers |
+| Mode          | Description                        | Best For                                  | Transport       |
+| ------------- | ---------------------------------- | ----------------------------------------- | --------------- |
+| `MCP`         | Streamable HTTP (JSON, stateful)   | Cursor (streamable_http), API integration | HTTP + JSON     |
+| `SSE`         | Server-Sent Events                 | Web apps, browser integrations            | HTTP + SSE      |
+| `MCP_AND_SSE` | Start MCP and SSE in one container | Cloud/service deploy with Nginx frontend  | HTTP + JSON/SSE |
 
 #### Quick Start Commands
 
 ```bash
-# Development mode (with hot reload)
-npm run dev              # STDIO mode
-npm run dev:sse          # SSE Server mode
-npm run dev:http         # HTTP Streamable Server mode
+# Development (local)
+npm run dev:mcp          # MCP mode (JSON /mcp)
+npm run dev:sse          # SSE mode (/sse)
 
-# Production mode
-npm start                # STDIO mode
-npm run start:sse        # SSE Server mode
-npm run start:http       # HTTP Streamable Server mode
+# Production (built output)
+npm run start:mcp
+npm run start:sse
 
-# With environment variables
-ANYCRAWL_MODE=SSE_SERVER ANYCRAWL_API_KEY=YOUR-KEY npm run dev
+# Env examples
+ANYCRAWL_MODE=MCP ANYCRAWL_API_KEY=YOUR-KEY npm run dev:mcp
+ANYCRAWL_MODE=SSE ANYCRAWL_API_KEY=YOUR-KEY npm run dev:sse
 ```
+
+### Docker Compose (MCP + SSE with Nginx)
+
+This repo ships a production-ready image that runs MCP (JSON) on port 3000 and SSE on port 3001 in the same container, fronted by Nginx. Nginx also supports API-key-prefixed paths `/{API_KEY}/mcp` and `/{API_KEY}/sse` and forwards the key via `x-anycrawl-api-key` header.
+
+```bash
+docker compose build
+docker compose up -d
+
+# Direct upstreams
+curl -s http://localhost:3000/health
+curl -s -N http://localhost:3001/sse -H "Accept: text/event-stream" | head -5
+
+# Through Nginx with API key in path
+curl -s -X POST http://localhost/YOUR_API_KEY/mcp \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -H 'Mcp-Protocol-Version: 2025-03-26' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"curl","version":"0.0.0"},"capabilities":{}}}'
+```
+
+Environment variables used in Docker image:
+
+- `ANYCRAWL_MODE`: `MCP_AND_SSE` (default in compose), or `MCP`, `SSE`
+- `ANYCRAWL_MCP_PORT`: default `3000`
+- `ANYCRAWL_SSE_PORT`: default `3001`
+- `CLOUD_SERVICE`: `true` to extract API key from `/{API_KEY}/...` or headers
+- `ANYCRAWL_BASE_URL`: default `https://api.anycrawl.dev`
 
 ### Running on Cursor
 

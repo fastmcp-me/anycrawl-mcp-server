@@ -72,7 +72,12 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Set default environment variables
 ENV NODE_ENV=production
-ENV ANYCRAWL_MODE=STDIO
+ENV ANYCRAWL_MODE=MCP_AND_SSE
+ENV ANYCRAWL_MCP_PORT=3000
+ENV ANYCRAWL_SSE_PORT=3001
+ENV ANYCRAWL_HOST=0.0.0.0
+ENV CLOUD_SERVICE=true
+ENV ANYCRAWL_BASE_URL=https://api.anycrawl.dev
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]

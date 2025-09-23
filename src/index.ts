@@ -1,18 +1,17 @@
 #!/usr/bin/env node
 
-import { FastMCP, type Context, type Tool } from 'fastmcp';
+import { FastMCP } from 'fastmcp';
 import { logger } from './logger.js';
 import { AnyCrawlMCPServer } from './mcp-server.js';
 import { IncomingHttpHeaders } from 'http';
-import { z } from 'zod';
 
-// Session data interface
+// Session data
 interface SessionData extends Record<string, unknown> {
     anycrawlApiKey: string;
     baseUrl?: string;
 }
 
-// Extract API key from headers
+// Extract API key from request headers
 function extractApiKey(headers: IncomingHttpHeaders): string | null {
     // Try x-anycrawl-api-key header first
     const anycrawlApiKey = headers['x-anycrawl-api-key'] || headers['X-AnyCrawl-Api-Key'];
@@ -34,7 +33,7 @@ function extractApiKey(headers: IncomingHttpHeaders): string | null {
     return null;
 }
 
-// Create FastMCP server instance
+// Create FastMCP server instance (single port)
 const server = new FastMCP<SessionData>({
     name: 'anycrawl-fastmcp',
     version: '0.0.6',
@@ -43,7 +42,14 @@ const server = new FastMCP<SessionData>({
         error: (message: string, data?: any) => logger.error(message, data),
         info: (message: string, data?: any) => logger.info(message, data),
         log: (message: string, data?: any) => logger.info(message, data),
-        warn: (message: string, data?: any) => logger.warn(message, data),
+        warn: (message: string, data?: any) => {
+            // Suppress non-critical client capability warning
+            if (message.includes('could not infer client capabilities')) {
+                logger.debug('Suppressed client capabilities warning:', message);
+                return;
+            }
+            logger.warn(message, data);
+        },
     },
     roots: { enabled: false },
     authenticate: async (request: { headers: IncomingHttpHeaders }): Promise<SessionData> => {
@@ -55,7 +61,7 @@ const server = new FastMCP<SessionData>({
             }
             return { anycrawlApiKey: apiKey };
         } else {
-            // For self-hosted instances, use default base URL if not provided
+            // Self-hosted default base URL
             const baseUrl = process.env.ANYCRAWL_BASE_URL || 'https://api.anycrawl.dev';
             return {
                 anycrawlApiKey: process.env.ANYCRAWL_API_KEY || '',
@@ -63,7 +69,7 @@ const server = new FastMCP<SessionData>({
             };
         }
     },
-    // Lightweight health endpoint for LB checks
+    // Health endpoint
     health: {
         enabled: true,
         message: 'ok',
@@ -72,72 +78,84 @@ const server = new FastMCP<SessionData>({
     },
 });
 
-// Helper function to get AnyCrawl MCP Server instance
+// Create AnyCrawl MCP server per session
 function getAnyCrawlMCPServer(session: SessionData): AnyCrawlMCPServer {
     return new AnyCrawlMCPServer(session.anycrawlApiKey, session.baseUrl);
 }
 
 
-// Create tools that delegate to AnyCrawlMCPServer
-const createTool = (toolDef: { name: string; description: string; parameters: any }): Tool<SessionData> => ({
-    name: toolDef.name,
-    description: toolDef.description,
-    parameters: toolDef.parameters,
-    execute: async (args, context) => {
-        const mcpServer = getAnyCrawlMCPServer(context.session!);
-
-        try {
-            context.log.info(`Executing ${toolDef.name} tool`, { args: JSON.stringify(args) });
-
-            // FastMCP passes args as the first parameter, not as arguments property
-            const result = await mcpServer.handleToolCall({ name: toolDef.name, arguments: args || {} });
-
-            return {
-                type: 'text',
-                text: JSON.stringify(result, null, 2)
-            };
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            context.log.error(`${toolDef.name} tool execution failed`, { error: errorMessage });
-            throw new Error(`${toolDef.name} failed: ${errorMessage}`);
-        }
-    },
-    annotations: {
-        readOnlyHint: toolDef.name !== 'anycrawl_cancel_crawl',
-        openWorldHint: ['anycrawl_scrape', 'anycrawl_crawl', 'anycrawl_search'].includes(toolDef.name),
-        destructiveHint: toolDef.name === 'anycrawl_cancel_crawl',
-        title: toolDef.name.replace('anycrawl_', '').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
-    }
-});
-
-// Get tool definitions from AnyCrawlMCPServer and add them to FastMCP
+// Get tool definitions from AnyCrawlMCPServer
 const tempServer = new AnyCrawlMCPServer('temp', undefined);
 const toolDefinitions = tempServer.getToolDefinitions();
 
-// Add all tools to the server
-toolDefinitions.forEach((toolDef: { name: string; description: string; parameters: any }) => {
-    server.addTool(createTool({
-        name: toolDef.name,
-        description: toolDef.description,
-        parameters: toolDef.parameters
-    }));
-});
+// Register tools to the FastMCP instance
+function addToolsToServer(serverInstance: FastMCP<SessionData>) {
+    toolDefinitions.forEach((toolDef: { name: string; description: string; parameters: any }) => {
+        serverInstance.addTool({
+            name: toolDef.name,
+            description: toolDef.description,
+            parameters: toolDef.parameters,
+            execute: async (args, context) => {
+                const mcpServer = getAnyCrawlMCPServer(context.session!);
+
+                try {
+                    context.log.info(`Executing ${toolDef.name} tool`, { args: JSON.stringify(args) });
+
+                    // FastMCP passes args as the first parameter, not as arguments property
+                    const result = await mcpServer.handleToolCall({ name: toolDef.name, arguments: args || {} });
+
+                    return {
+                        type: 'text',
+                        text: JSON.stringify(result, null, 2)
+                    };
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    context.log.error(`${toolDef.name} tool execution failed`, { error: errorMessage });
+                    throw new Error(`${toolDef.name} failed: ${errorMessage}`);
+                }
+            },
+            annotations: {
+                readOnlyHint: toolDef.name !== 'anycrawl_cancel_crawl',
+                openWorldHint: ['anycrawl_scrape', 'anycrawl_crawl', 'anycrawl_search'].includes(toolDef.name),
+                destructiveHint: toolDef.name === 'anycrawl_cancel_crawl'
+            }
+        });
+    });
+}
+
+// Add tools to the single server instance
+addToolsToServer(server);
 
 // Main execution function
 async function main() {
-    const mode = process.env.ANYCRAWL_MODE || 'STDIO';
+    const mode = process.env.ANYCRAWL_MODE || 'MCP';
 
     try {
-        if (mode === 'MCP_AND_SSE') {
-            // Cloud mode - supports both MCP protocol and SSE endpoints
-            const port = Number(process.env.ANYCRAWL_PORT || 3000);
+        if (mode === 'MCP') {
+            // MCP(JSON) mode for Cursor streamable_http
+            const port = Number(process.env.ANYCRAWL_PORT || process.env.ANYCRAWL_MCP_PORT || 3000);
             const host = process.env.ANYCRAWL_HOST || '0.0.0.0';
 
-            logger.info(`Starting AnyCrawl FastMCP Server in cloud mode on ${host}:${port}`);
-            logger.info('🚀 Server supports both MCP protocol (STDIO) and SSE endpoints');
-            logger.info('   MCP protocol: Available via STDIO');
-            logger.info(`   SSE endpoint: http://${host}:${port}/sse`);
+            logger.info(`Starting AnyCrawl FastMCP Server in MCP(JSON) mode`);
             logger.info(`   MCP endpoint: http://${host}:${port}/mcp`);
+
+            await server.start({
+                transportType: 'httpStream',
+                httpStream: {
+                    host,
+                    port,
+                    stateless: false,
+                    enableJsonResponse: true,
+                    endpoint: '/mcp'
+                }
+            });
+        } else if (mode === 'SSE') {
+            // SSE mode for web/browser clients
+            const port = Number(process.env.ANYCRAWL_PORT || process.env.ANYCRAWL_SSE_PORT || 3000);
+            const host = process.env.ANYCRAWL_HOST || '0.0.0.0';
+
+            logger.info(`Starting AnyCrawl FastMCP Server in SSE mode`);
+            logger.info(`   SSE endpoint: http://${host}:${port}/sse`);
 
             await server.start({
                 transportType: 'httpStream',
@@ -148,7 +166,6 @@ async function main() {
                 }
             });
         } else {
-            // STDIO mode (default)
             logger.info('Starting AnyCrawl FastMCP Server in STDIO mode');
             await server.start({
                 transportType: 'stdio'

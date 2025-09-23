@@ -1,13 +1,6 @@
 #!/usr/bin/env node
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
-    CallToolRequestSchema,
-    ListToolsRequestSchema,
-    Tool,
     CallToolResult,
     TextContent,
     ErrorCode,
@@ -26,26 +19,12 @@ import {
 } from './schemas.js';
 
 export class AnyCrawlMCPServer {
-    private server: Server;
     private client: AnyCrawlClient;
 
     constructor(apiKey: string, baseUrl?: string) {
         logger.info('Initializing AnyCrawl MCP Server');
 
-        this.server = new Server(
-            {
-                name: 'anycrawl-mcp-server',
-                version: '0.0.3',
-            },
-            {
-                capabilities: {
-                    tools: {},
-                },
-            }
-        );
-
         this.client = new AnyCrawlClient(apiKey, baseUrl);
-        this.setupToolHandlers();
 
         logger.info('AnyCrawl MCP Server initialized successfully');
     }
@@ -296,69 +275,6 @@ Examples:
         }
     }
 
-    private setupToolHandlers(): void {
-        this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-            return {
-                tools: this.getToolDefinitionsInternal()
-            };
-        });
-
-        this.server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
-            const { name, arguments: args } = request.params;
-            logger.info(`Tool called: ${name}`, {
-                tool: name,
-                parameters: args,
-                timestamp: new Date().toISOString()
-            });
-
-            try {
-                let result: CallToolResult;
-                switch (name) {
-                    case 'anycrawl_scrape':
-                        result = await this.handleScrape(args);
-                        break;
-                    case 'anycrawl_crawl':
-                        result = await this.handleCrawl(args);
-                        break;
-                    case 'anycrawl_crawl_status':
-                        result = await this.handleCrawlStatus(args);
-                        break;
-                    case 'anycrawl_crawl_results':
-                        result = await this.handleCrawlResults(args);
-                        break;
-                    case 'anycrawl_cancel_crawl':
-                        result = await this.handleCancelCrawl(args);
-                        break;
-                    case 'anycrawl_search':
-                        result = await this.handleSearch(args);
-                        break;
-                    default:
-                        logger.warn(`Unknown tool requested: ${name}`);
-                        throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
-                }
-
-                logger.info(`Tool ${name} completed successfully`, {
-                    tool: name,
-                    timestamp: new Date().toISOString()
-                });
-                return result;
-            } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                logger.error(`Tool ${name} failed:`, {
-                    tool: name,
-                    error: errorMessage,
-                    parameters: args,
-                    timestamp: new Date().toISOString()
-                });
-
-                if (error instanceof McpError) {
-                    throw error;
-                }
-
-                throw new McpError(ErrorCode.InternalError, `Tool execution failed: ${errorMessage}`);
-            }
-        });
-    }
 
     private async handleScrape(args: any): Promise<CallToolResult> {
         logger.info(`Starting scrape for URL: ${args.url}`);
@@ -579,13 +495,4 @@ Examples:
         return ret6;
     }
 
-    async run(): Promise<void> {
-        const transport = new StdioServerTransport();
-        await this.server.connect(transport);
-        logger.info('AnyCrawl MCP Server running on stdio');
-    }
-
-    public async connectTransport(transport: StdioServerTransport | StreamableHTTPServerTransport | SSEServerTransport): Promise<void> {
-        await this.server.connect(transport);
-    }
 }
