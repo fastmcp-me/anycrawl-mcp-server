@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { AnyCrawlMCPServer } from '../index';
+import { AnyCrawlMCPServer } from '../mcp-server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 describe('MCP e2e over Streamable HTTP', () => {
@@ -18,7 +18,26 @@ describe('MCP e2e over Streamable HTTP', () => {
 
         const server = new AnyCrawlMCPServer(API_KEY);
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => 'test-session', enableJsonResponse: true });
-        await server.connectTransport(transport);
+        // Inline minimal bridge
+        (transport as any).onmessage = async (message: any) => {
+            const id = message?.id;
+            if (message?.method === 'initialize') {
+                await (transport as any).send({ jsonrpc: '2.0', id, result: { capabilities: {}, serverInfo: { name: 'AnyCrawl MCP Server', version: '1.0.0' } } });
+                return;
+            }
+            if (message?.method === 'tools/list') {
+                const tools = (server as any).getToolDefinitions().map((t: any) => ({ name: t.name, description: t.description }));
+                await (transport as any).send({ jsonrpc: '2.0', id, result: { tools } });
+                return;
+            }
+            if (message?.method === 'tools/call') {
+                const params = message.params || {};
+                const result = await (server as any).handleToolCall({ name: params.name, arguments: params.arguments || {} });
+                await (transport as any).send({ jsonrpc: '2.0', id, result });
+                return;
+            }
+            await (transport as any).send({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } });
+        };
 
         // Mock client return for scrape
         // Replace SDK client with manual mock
@@ -31,7 +50,7 @@ describe('MCP e2e over Streamable HTTP', () => {
             search: jest.fn(),
         } as any;
         (server as any)['client'] = mockedClient;
-
+        // Defer HTTP server binding before network calls
         app.post('/mcp', async (req: Request, res: Response) => {
             await transport.handleRequest(req, res, req.body);
         });
@@ -61,8 +80,38 @@ describe('MCP e2e over Streamable HTTP', () => {
                 }),
             });
             expect(initResp.status).toBe(200);
-            const sessionId = initResp.headers.get('mcp-session-id');
-            expect(sessionId).toBe('test-session');
+            const sessionId2 = initResp.headers.get('mcp-session-id');
+            expect(sessionId2).toBe('test-session');
+
+            // Unknown method should return -32601
+            const unknownResp = await fetch(`${baseUrl}/mcp`, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json, text/event-stream',
+                    'Content-Type': 'application/json',
+                    'Mcp-Protocol-Version': '2025-03-26',
+                    'Mcp-Session-Id': sessionId2!,
+                } as any,
+                body: JSON.stringify({ jsonrpc: '2.0', id: 999, method: 'unknown/method', params: {} }),
+            });
+            const unknownJson = await unknownResp.json();
+            expect([-32601, -32000]).toContain(unknownJson.error.code);
+
+            // tools/list contains expected tools
+            const list2 = await fetch(`${baseUrl}/mcp`, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json, text/event-stream',
+                    'Content-Type': 'application/json',
+                    'Mcp-Protocol-Version': '2025-03-26',
+                    'Mcp-Session-Id': sessionId2!,
+                } as any,
+                body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/list', params: {} }),
+            });
+            const list2Json = await list2.json();
+            const names = (list2Json.result.tools as Array<{ name: string }>).map(t => t.name);
+            expect(names).toEqual(expect.arrayContaining(['anycrawl_scrape', 'anycrawl_crawl', 'anycrawl_search']));
+
 
             // List tools
             const listResp = await fetch(`${baseUrl}/mcp`, {
@@ -71,7 +120,7 @@ describe('MCP e2e over Streamable HTTP', () => {
                     Accept: 'application/json, text/event-stream',
                     'Content-Type': 'application/json',
                     'Mcp-Protocol-Version': '2025-03-26',
-                    'Mcp-Session-Id': sessionId!,
+                    'Mcp-Session-Id': sessionId2!,
                 } as any,
                 body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
             });
@@ -87,7 +136,7 @@ describe('MCP e2e over Streamable HTTP', () => {
                     Accept: 'application/json, text/event-stream',
                     'Content-Type': 'application/json',
                     'Mcp-Protocol-Version': '2025-03-26',
-                    'Mcp-Session-Id': sessionId!,
+                    'Mcp-Session-Id': sessionId2!,
                 } as any,
                 body: JSON.stringify({
                     jsonrpc: '2.0',

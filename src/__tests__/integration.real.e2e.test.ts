@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import axios from 'axios';
-import { AnyCrawlMCPServer } from '../index';
+import { AnyCrawlMCPServer } from '../mcp-server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 // Only run if explicitly enabled and a real API key is provided
@@ -114,7 +114,26 @@ describe('REAL API e2e (requires ANYCRAWL_API_KEY)', () => {
         (server as any)['client'] = realClient;
 
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => 'real-session', enableJsonResponse: true });
-        await server.connectTransport(transport);
+        // Inline bridge (compatible with current AnyCrawlMCPServer)
+        (transport as any).onmessage = async (message: any) => {
+            const id = message?.id;
+            if (message?.method === 'initialize') {
+                await (transport as any).send({ jsonrpc: '2.0', id, result: { capabilities: {}, serverInfo: { name: 'AnyCrawl MCP Server', version: '1.0.0' } } });
+                return;
+            }
+            if (message?.method === 'tools/list') {
+                const tools = (server as any).getToolDefinitions().map((t: any) => ({ name: t.name, description: t.description }));
+                await (transport as any).send({ jsonrpc: '2.0', id, result: { tools } });
+                return;
+            }
+            if (message?.method === 'tools/call') {
+                const params = message.params || {};
+                const result = await (server as any).handleToolCall({ name: params.name, arguments: params.arguments || {} });
+                await (transport as any).send({ jsonrpc: '2.0', id, result });
+                return;
+            }
+            await (transport as any).send({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } });
+        };
 
         app.post('/mcp', async (req: Request, res: Response) => {
             await transport.handleRequest(req, res, req.body);

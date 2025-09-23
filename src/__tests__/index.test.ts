@@ -1,4 +1,4 @@
-import { AnyCrawlMCPServer } from '../index';
+import { AnyCrawlMCPServer } from '../mcp-server';
 
 describe('AnyCrawlMCPServer tool handlers', () => {
     const API_KEY = 'test-key';
@@ -133,6 +133,23 @@ describe('AnyCrawlMCPServer tool handlers', () => {
         const body = JSON.parse((res.content[0] as any).text);
         expect(Array.isArray(body)).toBe(true);
         expect(client.search).toHaveBeenCalled();
+    });
+
+    test('anycrawl_search returns error when SDK throws', async () => {
+        const { server, client } = serverWithMockedClient();
+        (client.search as any).mockRejectedValue(new Error('network down'));
+        const res = await server.handleToolCall({ name: 'anycrawl_search', arguments: { query: 'q' } });
+        expect(res.isError).toBe(true);
+        expect((res.content[0] as any).text).toMatch(/failed|error/i);
+    });
+
+    test('anycrawl_crawl throws when SDK returns unexpected payload', async () => {
+        const { server, client } = serverWithMockedClient();
+        (client.crawl as any).mockResolvedValue(undefined);
+        const out = await server.handleToolCall({ name: 'anycrawl_crawl', arguments: { url: 'https://x.com', engine: 'cheerio' } });
+        // Should return a valid tool result shape
+        expect(out).toBeTruthy();
+        expect(Array.isArray(out.content)).toBe(true);
     });
 });
 

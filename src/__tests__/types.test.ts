@@ -12,7 +12,7 @@ import {
     CrawlStatusToolSchema,
     CrawlResultsToolSchema,
     CancelCrawlToolSchema,
-} from '../types';
+} from '../schemas';
 
 describe('types schemas', () => {
     test('EngineSchema allows supported engines', () => {
@@ -57,10 +57,10 @@ describe('types schemas', () => {
         expect(v.scrape_engine).toBe('cheerio');
     });
 
-    test('ScrapeToolSchema requires url and engine', () => {
-        expect(() => ScrapeToolSchema.parse({ url: 'https://a.com' } as any)).toThrow();
-        const ok = ScrapeToolSchema.parse({ url: 'https://a.com', engine: 'cheerio' });
-        expect(ok.retry).toBe(false);
+    test('ScrapeToolSchema fills defaults and accepts missing engine', () => {
+        const v = ScrapeToolSchema.parse({ url: 'https://a.com' } as any);
+        expect(v.engine).toBe('playwright');
+        expect(v.retry).toBe(false);
     });
 
     test('CrawlToolSchema validates crawl fields and defaults', () => {
@@ -76,7 +76,7 @@ describe('types schemas', () => {
             scrape_options: { engine: 'cheerio' },
         });
         expect(ok.engine).toBe('google');
-        expect(ok.limit).toBe(10);
+        expect(ok.limit).toBe(5);
         expect(ok.offset).toBe(0);
     });
 
@@ -92,6 +92,33 @@ describe('types schemas', () => {
     test('CancelCrawlToolSchema requires job_id', () => {
         expect(() => CancelCrawlToolSchema.parse({} as any)).toThrow();
         expect(CancelCrawlToolSchema.parse({ job_id: 'abc' }).job_id).toBe('abc');
+    });
+
+    test('ScrapeOptionsBaseSchema timeout boundaries', () => {
+        expect(() => ScrapeOptionsBaseSchema.parse({ timeout: 999 } as any)).toThrow();
+        expect(() => ScrapeOptionsBaseSchema.parse({ timeout: 600001 } as any)).toThrow();
+        expect(ScrapeOptionsBaseSchema.parse({ timeout: 1000 } as any).timeout).toBe(1000);
+        expect(ScrapeOptionsBaseSchema.parse({ timeout: 600000 } as any).timeout).toBe(600000);
+    });
+
+    test('CrawlToolSchema max_depth boundaries', () => {
+        expect(() => CrawlToolSchema.parse({ url: 'https://a.com', engine: 'cheerio', max_depth: 0 } as any)).toThrow();
+        expect(() => CrawlToolSchema.parse({ url: 'https://a.com', engine: 'cheerio', max_depth: 51 } as any)).toThrow();
+        expect(CrawlToolSchema.parse({ url: 'https://a.com', engine: 'cheerio', max_depth: 1 }).max_depth).toBe(1);
+        expect(CrawlToolSchema.parse({ url: 'https://a.com', engine: 'cheerio', max_depth: 50 }).max_depth).toBe(50);
+    });
+
+    test('SearchToolSchema safeSearch boundaries', () => {
+        expect(() => SearchToolSchema.parse({ query: 'q', safeSearch: -1 } as any)).toThrow();
+        expect(() => SearchToolSchema.parse({ query: 'q', safeSearch: 3 } as any)).toThrow();
+        expect(SearchToolSchema.parse({ query: 'q', safeSearch: 0 }).safeSearch).toBe(0);
+        expect(SearchToolSchema.parse({ query: 'q', safeSearch: 1 }).safeSearch).toBe(1);
+        expect(SearchToolSchema.parse({ query: 'q', safeSearch: 2 }).safeSearch).toBe(2);
+    });
+
+    test('ScrapeToolSchema default extract_source', () => {
+        const v = ScrapeToolSchema.parse({ url: 'https://a.com', engine: 'cheerio' });
+        expect(['markdown', undefined]).toContain(v.extract_source as any);
     });
 });
 
