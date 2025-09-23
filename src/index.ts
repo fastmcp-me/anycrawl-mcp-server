@@ -77,14 +77,20 @@ function getAnyCrawlMCPServer(session: SessionData): AnyCrawlMCPServer {
 }
 
 // Create tools that delegate to AnyCrawlMCPServer
-const createTool = (toolDef: { name: string; description: string }): Tool<SessionData> => ({
+const createTool = (toolDef: { name: string; description: string; parameters: any }): Tool<SessionData> => ({
     name: toolDef.name,
     description: toolDef.description,
+    parameters: toolDef.parameters,
     execute: async (args, context) => {
         const mcpServer = getAnyCrawlMCPServer(context.session!);
 
         try {
             context.log.info(`Executing ${toolDef.name} tool`, { args: JSON.stringify(args) });
+
+            // Validate args before passing to MCP server
+            if (!args || typeof args !== 'object') {
+                throw new Error(`Invalid arguments: expected object, got ${typeof args}`);
+            }
 
             // Use the existing MCP server's tool handling
             const result = await mcpServer.handleToolCall({ name: toolDef.name, arguments: args });

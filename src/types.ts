@@ -111,14 +111,14 @@ export interface SearchResult {
 // MCP Tool schemas
 export const ScrapeToolSchema = ScrapeOptionsSchema.extend({
   url: z.string().url(),
-  engine: EngineSchema,
+  engine: EngineSchema.default('playwright'),
   retry: z.boolean().default(false),
   proxy: z.string().url().optional(),
 });
 
 export const CrawlToolSchema = ScrapeOptionsBaseSchema.extend({
   url: z.string().url(),
-  engine: EngineSchema,
+  engine: EngineSchema.default('playwright'),
   retry: z.boolean().default(false),
   exclude_paths: z.array(z.string()).optional(),
   include_paths: z.array(z.string()).optional(),
@@ -148,7 +148,7 @@ export const CrawlToolSchema = ScrapeOptionsBaseSchema.extend({
 export const SearchToolSchema = SearchScrapeOptionsSchema.extend({
   query: z.string(),
   engine: z.enum(['google']).default('google'),
-  limit: z.number().min(1).max(100).default(10),
+  limit: z.number().min(1).max(100).default(5),
   offset: z.number().min(0).default(0),
   pages: z.number().min(1).max(20).optional(),
   lang: z.string().optional(),

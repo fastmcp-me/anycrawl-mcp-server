@@ -50,10 +50,11 @@ export class AnyCrawlMCPServer {
     }
 
     // Get tool definitions for FastMCP integration
-    public getToolDefinitions(): Array<{ name: string; description: string }> {
+    public getToolDefinitions(): Array<{ name: string; description: string; parameters: any }> {
         return this.getToolDefinitionsInternal().map(tool => ({
             name: tool.name,
-            description: tool.description
+            description: tool.description,
+            parameters: tool.inputSchema
         }));
     }
 
@@ -67,9 +68,11 @@ export class AnyCrawlMCPServer {
 Best for: One known page (articles, docs, product pages).
 Not recommended for: Multi-page coverage (use anycrawl_crawl) or open-ended discovery (use anycrawl_search).
 
+RECOMMENDED: Use 'playwright' engine for best results with dynamic content and modern websites.
+
 Usage (parameters):
 - url: HTTP/HTTPS URL to scrape (string, required)
-- engine: 'cheerio' | 'playwright' | 'puppeteer' (required)
+- engine: 'playwright' | 'cheerio' | 'puppeteer' (required, default: 'playwright')
 - proxy: Proxy URL (string, optional)
 - formats: Output formats ['markdown'|'html'|'text'|'screenshot'|'screenshot@fullPage'|'rawHtml'|'json'] (optional)
 - timeout: Request timeout in ms (number, optional)
@@ -83,9 +86,9 @@ Usage (parameters):
 Returns: { url, status, jobId?, title?, html?, markdown?, metadata?, timestamp? }
 
 Examples:
-- Minimal: { "url": "https://example.com", "engine": "cheerio" }
+- Recommended: { "url": "https://example.com", "engine": "playwright" }
 - With JSON extraction: { "url": "https://news.ycombinator.com", "engine": "playwright", "formats": ["markdown"], "json_options": { "user_prompt": "Extract titles", "schema_name": "Articles" } }
-- With JSON schema extraction: { "url": "https://example.com/article", "engine": "cheerio", "json_options": { "schema_name": "Article", "schema_description": "Extract article metadata and content", "schema": { "type": "object", "properties": { "title": { "type": "string" }, "author": { "type": "string" }, "date": { "type": "string" }, "content": { "type": "string" } }, "required": ["title", "content"] } } }`,
+- With JSON schema extraction: { "url": "https://example.com/article", "engine": "playwright", "json_options": { "schema_name": "Article", "schema_description": "Extract article metadata and content", "schema": { "type": "object", "properties": { "title": { "type": "string" }, "author": { "type": "string" }, "date": { "type": "string" }, "content": { "type": "string" } }, "required": ["title", "content"] } } }`,
                 inputSchema: {
                     type: 'object',
                     properties: {
@@ -98,9 +101,9 @@ Examples:
                         engine: {
                             type: 'string',
                             enum: ['playwright', 'cheerio', 'puppeteer'],
-                            description: 'The scraping engine to use. Cheerio is fastest for static content, Playwright for dynamic content, Puppeteer for Chrome automation.',
-                            default: 'cheerio',
-                            examples: ['cheerio', 'playwright', 'puppeteer'],
+                            description: 'The scraping engine to use. RECOMMENDED: Playwright for best results with dynamic content and modern websites. Cheerio is fastest for static content, Puppeteer for Chrome automation.',
+                            default: 'playwright',
+                            examples: ['playwright', 'cheerio', 'puppeteer'],
                         },
                         proxy: {
                             type: 'string',
@@ -193,9 +196,11 @@ Examples:
 Best for: Multi-page coverage, site mapping, content discovery.
 Not recommended for: Single pages (use anycrawl_scrape) or open-ended discovery (use anycrawl_search).
 
+RECOMMENDED: Use 'playwright' engine for best results with dynamic content and modern websites.
+
 Usage (parameters):
 - url: Starting URL to crawl (string, required)
-- engine: 'cheerio' | 'playwright' | 'puppeteer' (required)
+- engine: 'playwright' | 'cheerio' | 'puppeteer' (required, default: 'playwright')
 - max_depth: Maximum crawl depth (number, optional, default: 10)
 - limit: Maximum pages to crawl (number, optional, default: 100)
 - strategy: Crawl strategy 'all' | 'same-domain' | 'same-hostname' | 'same-origin' (optional, default: 'same-domain')
@@ -210,9 +215,9 @@ Usage (parameters):
 Returns: { job_id, status, message } for async jobs
 
 Examples:
-- Basic crawl: { "url": "https://example.com", "engine": "cheerio", "limit": 50 }
+- Recommended: { "url": "https://example.com", "engine": "playwright", "limit": 50 }
 - Deep crawl: { "url": "https://docs.example.com", "engine": "playwright", "max_depth": 5, "limit": 200 }
-- Filtered crawl: { "url": "https://blog.example.com", "engine": "cheerio", "include_paths": ["/posts/*"], "exclude_paths": ["/admin/*"] }`,
+- Filtered crawl: { "url": "https://blog.example.com", "engine": "playwright", "include_paths": ["/posts/*"], "exclude_paths": ["/admin/*"] }`,
                 inputSchema: {
                     type: 'object',
                     properties: {
@@ -225,9 +230,9 @@ Examples:
                         engine: {
                             type: 'string',
                             enum: ['playwright', 'cheerio', 'puppeteer'],
-                            description: 'The crawling engine to use. Cheerio is fastest for static content, Playwright for dynamic content, Puppeteer for Chrome automation.',
-                            default: 'cheerio',
-                            examples: ['cheerio', 'playwright', 'puppeteer'],
+                            description: 'The crawling engine to use. RECOMMENDED: Playwright for best results with dynamic content and modern websites. Cheerio is fastest for static content, Puppeteer for Chrome automation.',
+                            default: 'playwright',
+                            examples: ['playwright', 'cheerio', 'puppeteer'],
                         },
                         max_depth: {
                             type: 'number',
@@ -322,10 +327,12 @@ Examples:
 Best for: Open-ended discovery, finding relevant content.
 Not recommended for: Known URLs (use anycrawl_scrape) or comprehensive site coverage (use anycrawl_crawl).
 
+RECOMMENDED: Use limit=5 for balanced performance and cost. Use 'playwright' engine for scraping results.
+
 Usage (parameters):
 - query: Search query string (string, required)
 - engine: Search engine 'google' (optional, default: 'google')
-- limit: Number of results to return (number, optional, default: 10)
+- limit: Number of results to return (number, optional, default: 5)
 - offset: Number of results to skip (number, optional, default: 0)
 - pages: Number of search result pages to process (number, optional)
 - lang: Language code (string, optional)
@@ -336,9 +343,9 @@ Usage (parameters):
 Returns: Array of search results with optional scraped content
 
 Examples:
-- Basic search: { "query": "artificial intelligence news", "limit": 5 }
-- With scraping: { "query": "TypeScript tutorials", "limit": 10, "scrape_options": { "formats": ["markdown"], "engine": "cheerio" } }
-- Localized search: { "query": "machine learning", "lang": "es", "country": "ES", "limit": 20 }`,
+- Recommended: { "query": "artificial intelligence news", "limit": 5 }
+- With scraping: { "query": "TypeScript tutorials", "limit": 5, "scrape_options": { "formats": ["markdown"], "engine": "playwright" } }
+- Localized search: { "query": "machine learning", "lang": "es", "country": "ES", "limit": 5 }`,
                 inputSchema: {
                     type: 'object',
                     properties: {
@@ -357,8 +364,8 @@ Examples:
                             type: 'number',
                             minimum: 1,
                             maximum: 100,
-                            description: 'Number of search results to return.',
-                            default: 10,
+                            description: 'Number of search results to return. RECOMMENDED: 5 for balanced performance and cost.',
+                            default: 5,
                             examples: [5, 10, 20, 50],
                         },
                         offset: {
@@ -504,6 +511,16 @@ Examples:
     // Helper for tests to simulate tool calls without MCP transport
     public async handleToolCall(request: { name: string; arguments: any }): Promise<any> {
         const { name, arguments: args } = request as any;
+
+        // Validate arguments
+        if (!args || typeof args !== 'object') {
+            logger.error(`Invalid arguments for tool ${name}:`, { args });
+            return {
+                content: [{ type: 'text', text: `Invalid arguments: expected object, got ${typeof args}` }],
+                isError: true,
+            };
+        }
+
         try {
             logger.info(`Tool called: ${name}`, {
                 tool: name,
