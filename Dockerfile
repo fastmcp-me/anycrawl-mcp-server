@@ -78,4 +78,4 @@ ENV ANYCRAWL_MODE=STDIO
 ENTRYPOINT ["dumb-init", "--"]
 
 # Start the application
-CMD ["/usr/local/bin/entrypoint.sh"]
+CMD ["node", "dist/cli.js"]
