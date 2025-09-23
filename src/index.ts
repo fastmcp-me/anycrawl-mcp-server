@@ -130,13 +130,14 @@ async function main() {
             logger.info('🚀 Server supports both MCP protocol (STDIO) and SSE endpoints');
             logger.info('   MCP protocol: Available via STDIO');
             logger.info(`   SSE endpoint: http://${host}:${port}/sse`);
+            logger.info(`   MCP endpoint: http://${host}:${port}/mcp`);
 
             await server.start({
                 transportType: 'httpStream',
                 httpStream: {
                     host,
                     port,
-                    enableJsonResponse: true,
+                    stateless: true
                 }
             });
         } else {
